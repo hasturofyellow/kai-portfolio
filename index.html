@@ -66,6 +66,44 @@
             font-size: 1rem;
         }
 
+        .projects {
+            margin-bottom: 40px;
+        }
+
+        .projects h2 {
+            font-size: 2rem;
+            margin-bottom: 20px;
+            color: #00796b;
+        }
+
+        .project-item {
+            cursor: pointer;
+            background-size: cover;
+            background-position: center;
+            height: 200px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-shadow: 0 2px 5px rgba(0, 0, 0, 0.7);
+            transition: transform 0.2s;
+        }
+
+        .project-item:hover {
+            transform: scale(1.05);
+        }
+
+        .project-ageofwar {
+            background-image: url('ageOfWar.png');
+            background-size: cover;
+            background-position: top;
+            background-repeat: no-repeat;
+        }
+
         footer {
             text-align: center;
             padding: 20px;
@@ -111,10 +149,11 @@
             </ul>
         </section>
 
-        <!-- Placeholder for Projects Section -->
         <section class="projects">
             <h2>My Projects</h2>
-            <p>Coming soon! Stay tuned for updates.</p>
+            <div class="project-item project-ageofwar" onclick="location.href='ageOfWar.html'">
+                Age of War
+            </div>
         </section>
     </div>
 
