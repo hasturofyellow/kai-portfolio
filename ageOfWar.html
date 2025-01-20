@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Age of War Clone (Earn Gold on Kills)</title>
+  <style>
+    /* Basic Page Styles */
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      text-align: center;
+      background: #f5f5f5;
+    }
+    h1 {
+      margin-top: 1rem;
+    }
+
+    /*****************************************************************
+     * HOME SCREEN STYLES
+     *****************************************************************/
+    #homeScreen {
+      display: block; /* initially visible */
+    }
+    #gameScreen {
+      display: none;  /* hidden until we start the game */
+    }
+
+    #difficultyForm {
+      margin: 1rem auto;
+      width: 300px;
+      text-align: left;
+    }
+    #difficultyForm label {
+      display: block;
+      margin: 0.5rem 0;
+    }
+    #startButton {
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+
+    /*****************************************************************
+     * GAME SCREEN STYLES
+     *****************************************************************/
+    /* Game Container */
+    #gameContainer {
+      position: relative;
+      width: 800px;
+      height: 200px;
+      margin: 1rem auto;
+      background: #d0e4f0; /* light background */
+      border: 2px solid #333;
+      overflow: hidden;
+    }
+
+    /* Base Styles */
+    .base {
+      position: absolute;
+      width: 60px;
+      height: 80px;
+      top: 60px;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      text-align: center;
+      padding: 0.5rem;
+      box-sizing: border-box;
+      transition: background 0.5s;
+    }
+    #playerBase {
+      left: 0;
+    }
+    #enemyBase {
+      right: 0;
+    }
+
+    /*****************************************************************
+     * TURRET SLOT & ANIMATIONS
+     *****************************************************************/
+    .turretSlot {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      top: 30px;
+    }
+    #playerTurretSlot {
+      left: 70px;
+    }
+    #enemyTurretSlot {
+      right: 70px;
+    }
+
+    .turret {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      border-radius: 5px;
+      border: 2px solid #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    /* Prehistoric Turret Animation - "Volcano Turret" */
+    @keyframes turretAnimPrehistoric {
+      0%   { transform: scale(1)   rotate(0deg);    background-color: #aa8844; }
+      25%  { transform: scale(1.1) rotate(-5deg);   background-color: #d15b3c; }
+      50%  { transform: scale(1)   rotate(0deg);    background-color: #aa8844; }
+      75%  { transform: scale(1.1) rotate(5deg);    background-color: #d15b3c; }
+      100% { transform: scale(1)   rotate(0deg);    background-color: #aa8844; }
+    }
+
+    /* Medieval Turret Animation - "Dragon Tower" */
+    @keyframes turretAnimMedieval {
+      0%   { transform: translateY(0px);   background-color: #9966CC; }
+      50%  { transform: translateY(-5px);  background-color: #aa77dd; }
+      100% { transform: translateY(0px);   background-color: #9966CC; }
+    }
+
+    /* Modern Turret Animation - "Laser Cannon" */
+    @keyframes turretAnimModern {
+      0%   { box-shadow: 0 0 2px #fff; transform: scale(1);   background-color: #666; }
+      50%  { box-shadow: 0 0 10px #00fffb; transform: scale(1.1); background-color: #333; }
+      100% { box-shadow: 0 0 2px #fff; transform: scale(1);   background-color: #666; }
+    }
+
+    /* Unit Styles */
+    .unit {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      top: 90px;
+      border-radius: 3px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    /* Projectile Styles */
+    .projectile {
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: orange;
+    }
+
+    /* Display Bars */
+    #statsBar {
+      margin: 1rem auto;
+      width: 800px;
+      display: flex;
+      justify-content: space-around;
+      flex-wrap: wrap;
+    }
+    .stat {
+      background: #fff;
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      min-width: 120px;
+      margin: 0.2rem;
+    }
+
+    /* Spawn Buttons / Upgrade Button / Turret Buttons */
+    #unitButtons,
+    #turretButtons {
+      margin: 1rem auto;
+      width: 800px;
+    }
+    #unitButtons button,
+    #turretButtons button {
+      margin: 0.2rem;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+    }
+    #upgradeButton {
+      margin-left: 2rem;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      background-color: #ffcc00;
+      border: 1px solid #999;
+    }
+  </style>
+</head>
+<body>
+  <!-- AUDIO FOR HOME SCREEN -->
+  <audio id="homeAudio" src="Opening.mp3" autoplay loop></audio>
+
+  <!-- AUDIO FOR GAME SCREEN -->
+  <audio id="gameAudio" src="Battle.mp3" loop></audio>
+
+  <!-- HOME SCREEN -->
+  <div id="homeScreen">
+    <h1>Age of War Clone (Earn Gold on Unit Kills)</h1>
+    <div id="difficultyForm">
+      <label>
+        <input type="radio" name="difficulty" value="easy" checked />
+        Easy (Enemy spawns slower)
+      </label>
+      <label>
+        <input type="radio" name="difficulty" value="medium" />
+        Medium (Enemy spawns at normal rate)
+      </label>
+      <label>
+        <input type="radio" name="difficulty" value="hard" />
+        Hard (Enemy spawns quickly)
+      </label>
+    </div>
+    <button id="startButton">Start Game</button>
+  </div>
+
+  <!-- GAME SCREEN -->
+  <div id="gameScreen">
+    <!-- Game Stats (Gold, Base Health, etc.) -->
+    <div id="statsBar">
+      <div class="stat">Gold: <span id="goldDisplay">0</span></div>
+      <div class="stat">Your Era: <span id="playerEraDisplay">Prehistoric</span></div>
+      <div class="stat">Your Base HP: <span id="playerBaseHPDisplay">1000</span></div>
+      <div class="stat">Enemy Era: <span id="enemyEraDisplay">Prehistoric</span></div>
+      <div class="stat">Enemy Base HP: <span id="enemyBaseHPDisplay">1000</span></div>
+    </div>
+
+    <!-- Game Container -->
+    <div id="gameContainer">
+      <!-- Player Base -->
+      <div id="playerBase" class="base">
+        <span id="playerBaseHPText">1000<br/>Prehistoric</span>
+      </div>
+
+      <!-- Turret Slot for Player -->
+      <div id="playerTurretSlot" class="turretSlot"></div>
+
+      <!-- Enemy Base -->
+      <div id="enemyBase" class="base">
+        <span id="enemyBaseHPText">1000<br/>Prehistoric</span>
+      </div>
+
+      <!-- Turret Slot for Enemy -->
+      <div id="enemyTurretSlot" class="turretSlot"></div>
+    </div>
+
+    <!-- Unit Spawning and Upgrading -->
+    <div id="unitButtons">
+      <!-- We'll dynamically insert spawn buttons here for each era -->
+      <button id="upgradeButton" onclick="upgradeBase('player')">Upgrade Base</button>
+    </div>
+
+    <!-- Turret Controls (buy/remove) -->
+    <div id="turretButtons">
+      <!-- We'll dynamically insert buy/remove turret buttons here -->
+    </div>
+  </div>
+
+  <script>
+    /*****************************************************************
+     * HOME SCREEN / MUSIC / DIFFICULTY
+     *****************************************************************/
+    const homeScreen = document.getElementById("homeScreen");
+    const gameScreen = document.getElementById("gameScreen");
+    const startButton = document.getElementById("startButton");
+
+    // Audio references
+    const homeAudio = document.getElementById("homeAudio");
+    const gameAudio = document.getElementById("gameAudio");
+
+    let enemySpawnInterval = 5000; // default: medium
+    let gameOver = false;
+    let spawnIntervalId = null;
+    let enemyUpgradeIntervalId = null;
+
+    startButton.addEventListener("click", () => {
+      // Set enemy spawn rate based on difficulty
+      const difficulties = document.getElementsByName("difficulty");
+      for (let i = 0; i < difficulties.length; i++) {
+        if (difficulties[i].checked) {
+          if (difficulties[i].value === "easy") {
+            enemySpawnInterval = 8000;
+          } else if (difficulties[i].value === "medium") {
+            enemySpawnInterval = 5000;
+          } else if (difficulties[i].value === "hard") {
+            enemySpawnInterval = 2000;
+          }
+        }
+      }
+      // Stop home music, start game music
+      homeAudio.pause();
+      homeAudio.currentTime = 0;
+      gameAudio.play();
+
+      // Show game screen
+      homeScreen.style.display = "none";
+      gameScreen.style.display = "block";
+      initGame();
+    });
+
+    /*****************************************************************
+     * GAME VARIABLES & SETUP
+     *****************************************************************/
+    const gameContainer = document.getElementById("gameContainer");
+
+    // We'll store the player's gold, base HP, etc.
+    let gold = 100;
+    let playerBaseHP = 1000;
+    let enemyBaseHP = 1000;
+
+    // Era definitions (with the turret data, etc.)
+    const eras = [
+      {
+        name: "Prehistoric",
+        baseColor: "#754C24",
+        costToUpgrade: 200,
+        maxHP: 1000,
+        units: [
+          { 
+            name: "Clubman",  
+            cost: 30, speed: 0.4, attack: 8,  
+            range: 10,
+            maxHP: 40, color: "brown" 
+          },
+          { 
+            name: "Slingshot",
+            cost: 50, speed: 0.4, attack: 10, 
+            range: 50,
+            maxHP: 35, color: "green"
+          },
+          { 
+            name: "DinoRider",
+            cost: 80, speed: 0.6, attack: 15, 
+            range: 10, 
+            maxHP: 50, color: "purple" 
+          }
+        ],
+        turret: {
+          name: "Volcano Turret",
+          cost: 120,
+          range: 100,
+          damage: 3,
+          color: "#aa8844",
+          animation: "turretAnimPrehistoric"
+        }
+      },
+      {
+        name: "Medieval",
+        baseColor: "#6E5A8A",
+        costToUpgrade: 500,
+        maxHP: 1500,
+        units: [
+          { 
+            name: "Swordsman", 
+            cost: 50, speed: 0.5, attack: 10, 
+            range: 10, 
+            maxHP: 50, color: "blue" 
+          },
+          { 
+            name: "Archer",    
+            cost: 75, speed: 0.4, attack: 15, 
+            range: 50,
+            maxHP: 40, color: "green" 
+          },
+          { 
+            name: "Knight",    
+            cost: 100, speed: 0.6, attack: 20, 
+            range: 10,
+            maxHP: 60, color: "purple" 
+          }
+        ],
+        turret: {
+          name: "Dragon Tower",
+          cost: 220,
+          range: 120,
+          damage: 5,
+          color: "#9966CC",
+          animation: "turretAnimMedieval"
+        }
+      },
+      {
+        name: "Modern",
+        baseColor: "#444",
+        costToUpgrade: 0,
+        maxHP: 2000,
+        units: [
+          { 
+            name: "Infantry", 
+            cost: 60, speed: 0.5, attack: 12, 
+            range: 20, 
+            maxHP: 50, color: "blue" 
+          },
+          { 
+            name: "Sniper",   
+            cost: 90, speed: 0.4, attack: 18, 
+            range: 60,
+            maxHP: 45, color: "green" 
+          },
+          { 
+            name: "Tank",     
+            cost: 150, speed: 0.3, attack: 30, 
+            range: 25, 
+            maxHP: 80, color: "gray" 
+          }
+        ],
+        turret: {
+          name: "Laser Cannon",
+          cost: 320,
+          range: 140,
+          damage: 8,
+          color: "#666",
+          animation: "turretAnimModern"
+        }
+      }
+    ];
+
+    // We'll track the player's and enemy's current era
+    let playerEraIndex = 0;
+    let enemyEraIndex = 0;
+
+    // Arrays to hold player and enemy units
+    let playerUnits = [];
+    let enemyUnits = [];
+
+    // Turret references (null if none purchased)
+    let playerTurret = null;
+    let enemyTurret = null;
+
+    // Projectiles array
+    let projectiles = [];
+
+    // For easier references
+    const goldDisplay          = document.getElementById("goldDisplay");
+    const playerBaseHPDisplay  = document.getElementById("playerBaseHPDisplay");
+    const enemyBaseHPDisplay   = document.getElementById("enemyBaseHPDisplay");
+    const playerBaseHPText     = document.getElementById("playerBaseHPText");
+    const enemyBaseHPText      = document.getElementById("enemyBaseHPText");
+    const playerEraDisplay     = document.getElementById("playerEraDisplay");
+    const enemyEraDisplay      = document.getElementById("enemyEraDisplay");
+
+    const playerBaseElem       = document.getElementById("playerBase");
+    const enemyBaseElem        = document.getElementById("enemyBase");
+    const unitButtonsContainer = document.getElementById("unitButtons");
+    const turretButtonsContainer = document.getElementById("turretButtons");
+
+    const playerTurretSlotElem = document.getElementById("playerTurretSlot");
+    const enemyTurretSlotElem  = document.getElementById("enemyTurretSlot");
+
+    /*****************************************************************
+     * UI / STATS UPDATE
+     *****************************************************************/
+    function updateUI() {
+      goldDisplay.textContent = Math.floor(gold);
+      playerBaseHPDisplay.textContent = playerBaseHP;
+      enemyBaseHPDisplay.textContent = enemyBaseHP;
+
+      playerBaseHPText.innerHTML = 
+        `${playerBaseHP}<br/>${eras[playerEraIndex].name}`;
+      enemyBaseHPText.innerHTML = 
+        `${enemyBaseHP}<br/>${eras[enemyEraIndex].name}`;
+
+      playerEraDisplay.textContent = eras[playerEraIndex].name;
+      enemyEraDisplay.textContent  = eras[enemyEraIndex].name;
+    }
+
+    // Redraw the "spawn unit" buttons based on the player's era
+    function redrawPlayerUnitButtons() {
+      // Remove existing unit buttons (except upgrade button)
+      const children = [...unitButtonsContainer.children];
+      for (let child of children) {
+        if (child.id !== "upgradeButton") {
+          unitButtonsContainer.removeChild(child);
+        }
+      }
+
+      // Now add new buttons for the current era
+      const currentEraData = eras[playerEraIndex];
+      currentEraData.units.forEach((unitDef) => {
+        const btn = document.createElement("button");
+        btn.textContent = `${unitDef.name} (${unitDef.cost} gold)`;
+        btn.addEventListener("click", () => spawnPlayerUnit(unitDef));
+        unitButtonsContainer.insertBefore(btn, document.getElementById("upgradeButton"));
+      });
+    }
+
+    // Redraw turret buy/remove buttons
+    function redrawTurretButtons() {
+      // Clear out existing turret buttons
+      turretButtonsContainer.innerHTML = "";
+
+      const currentEraData = eras[playerEraIndex];
+      if (!playerTurret) {
+        // Show "buy turret" button
+        const buyBtn = document.createElement("button");
+        buyBtn.textContent = `Buy ${currentEraData.turret.name} (${currentEraData.turret.cost} gold)`;
+        buyBtn.addEventListener("click", () => buyPlayerTurret());
+        turretButtonsContainer.appendChild(buyBtn);
+      } else {
+        // Show "remove turret" button (refund half cost)
+        const removeBtn = document.createElement("button");
+        removeBtn.textContent = `Remove Turret (Sell for ${Math.floor(playerTurret.cost/2)})`;
+        removeBtn.addEventListener("click", () => removePlayerTurret());
+        turretButtonsContainer.appendChild(removeBtn);
+      }
+    }
+
+    /*****************************************************************
+     * ERA / BASE HANDLING
+     *****************************************************************/
+    function setBaseAppearance(side) {
+      if (side === "player") {
+        playerBaseElem.style.background = eras[playerEraIndex].baseColor;
+      } else {
+        enemyBaseElem.style.background = eras[enemyEraIndex].baseColor;
+      }
+    }
+
+    function upgradeBase(side) {
+      if (gameOver) return;
+
+      if (side === "player") {
+        if (playerEraIndex >= eras.length - 1) return; // last era
+        const currentEra = eras[playerEraIndex];
+        const cost = currentEra.costToUpgrade;
+        if (gold >= cost) {
+          gold -= cost;
+          playerEraIndex++;
+          playerBaseHP = eras[playerEraIndex].maxHP;
+          setBaseAppearance("player");
+          redrawPlayerUnitButtons();
+          redrawTurretButtons(); 
+        }
+      } else {
+        if (enemyEraIndex >= eras.length - 1) return;
+        enemyEraIndex++;
+        enemyBaseHP = eras[enemyEraIndex].maxHP;
+        setBaseAppearance("enemy");
+      }
+      updateUI();
+    }
+
+    function enemyAutoUpgrade() {
+      if (gameOver) return;
+      if (enemyEraIndex < eras.length - 1 && Math.random() < 0.5) {
+        upgradeBase("enemy");
+      }
+    }
+
+    /*****************************************************************
+     * TURRETS (PLAYER + ENEMY)
+     *****************************************************************/
+    function buyPlayerTurret() {
+      if (playerTurret) return; // already have one
+      const turretData = eras[playerEraIndex].turret;
+      if (gold < turretData.cost) return;
+
+      gold -= turretData.cost;
+      // Create turret element
+      const turretElem = document.createElement("div");
+      turretElem.classList.add("turret");
+      turretElem.style.background = turretData.color;
+      turretElem.style.animation = `${turretData.animation} 1.2s infinite`;
+      turretElem.textContent = turretData.name.charAt(0).toUpperCase();
+      playerTurretSlotElem.appendChild(turretElem);
+
+      // Construct turret object
+      playerTurret = {
+        ...turretData,
+        element: turretElem,
+        side: "player"
+      };
+      redrawTurretButtons();
+      updateUI();
+    }
+
+    function removePlayerTurret() {
+      if (!playerTurret) return;
+      // Refund half
+      gold += Math.floor(playerTurret.cost / 2);
+
+      // Remove from DOM
+      if (playerTurret.element && playerTurret.element.parentNode) {
+        playerTurret.element.parentNode.removeChild(playerTurret.element);
+      }
+      playerTurret = null;
+      redrawTurretButtons();
+      updateUI();
+    }
+
+    // The enemy can auto-buy turrets
+    function enemyAutoTurret() {
+      if (gameOver) return;
+      if (!enemyTurret && Math.random() < 0.3) {
+        const turretData = eras[enemyEraIndex].turret;
+        const turretElem = document.createElement("div");
+        turretElem.classList.add("turret");
+        turretElem.style.background = turretData.color;
+        turretElem.style.animation = `${turretData.animation} 1.2s infinite`;
+        turretElem.textContent = turretData.name.charAt(0).toUpperCase();
+        enemyTurretSlotElem.appendChild(turretElem);
+
+        enemyTurret = {
+          ...turretData,
+          element: turretElem,
+          side: "enemy"
+        };
+      }
+    }
+
+    /*****************************************************************
+     * PROJECTILES
+     *****************************************************************/
+    // Create a new projectile traveling from (startX,startY) to (targetX,targetY)
+    function createProjectile(startX, startY, targetX, targetY, speed, damage, side, color) {
+      const projElem = document.createElement("div");
+      projElem.classList.add("projectile");
+      projElem.style.background = color;
+      gameContainer.appendChild(projElem);
+
+      const projectile = {
+        x: startX,
+        y: startY,
+        targetX,
+        targetY,
+        speed,    // e.g. 2 or 3
+        damage,   // how much HP to subtract
+        side,     // "player" or "enemy"
+        element: projElem
+      };
+      projectiles.push(projectile);
+    }
+
+    // Update all projectiles each frame
+    function updateProjectiles() {
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        
+        // Move the projectile
+        const dx = p.targetX - p.x;
+        const dy = p.targetY - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        // If it's already too far (off-screen), remove
+        if (p.x < 0 || p.x > 800 || p.y < 0 || p.y > 200) {
+          removeProjectile(i);
+          continue;
+        }
+
+        // If it’s close enough to the target, we deal damage
+        if (dist < 2) {
+          dealProjectileDamage(p.targetX, p.targetY, p.side, p.damage);
+          removeProjectile(i);
+        } else {
+          // Move fractionally
+          const moveX = (dx / dist) * p.speed;
+          const moveY = (dy / dist) * p.speed;
+          p.x += moveX;
+          p.y += moveY;
+          // Update DOM
+          p.element.style.left = p.x + "px";
+          p.element.style.top = p.y + "px";
+        }
+      }
+    }
+
+    function removeProjectile(index) {
+      if (index < 0 || index >= projectiles.length) return;
+      const proj = projectiles[index];
+      if (proj.element && proj.element.parentNode) {
+        proj.element.parentNode.removeChild(proj.element);
+      }
+      projectiles.splice(index, 1);
+    }
+
+    // When a projectile lands, figure out which unit or base is at that location
+    function dealProjectileDamage(x, y, side, damage) {
+      // We'll see which side the projectile is attacking
+      // For simplicity, we consider a small radius around (x,y)
+      const radius = 10; 
+      if (side === "player") {
+        // Damaging enemy units or base
+        for (let eUnit of enemyUnits) {
+          let dist = Math.hypot(eUnit.x - x, 90 - y); // units are near y=90
+          if (dist <= radius) {
+            eUnit.hp -= damage;
+            // If that kills the unit, handle it now (with gold reward)
+            if (eUnit.hp <= 0) {
+              eUnit.hp = 0;
+              rewardKill(eUnit, "player");  // <--- new function call
+              removeUnit(enemyUnits, eUnit);
+            }
+            return;
+          }
+        }
+        // Check if near enemy base
+        const baseDist = Math.abs(760 - x); // enemy base near x=760
+        if (baseDist <= radius) {
+          enemyBaseHP -= damage;
+          if (enemyBaseHP <= 0) {
+            enemyBaseHP = 0;
+            endGame("You Win!");
+          }
+        }
+      } else {
+        // Damaging player units or base
+        for (let pUnit of playerUnits) {
+          let dist = Math.hypot(pUnit.x - x, 90 - y);
+          if (dist <= radius) {
+            pUnit.hp -= damage;
+            if (pUnit.hp <= 0) {
+              pUnit.hp = 0;
+              rewardKill(pUnit, "enemy"); 
+              removeUnit(playerUnits, pUnit);
+            }
+            return;
+          }
+        }
+        // Check if near player base
+        const baseDist = Math.abs(60 - x); // player base near x=60
+        if (baseDist <= radius) {
+          playerBaseHP -= damage;
+          if (playerBaseHP <= 0) {
+            playerBaseHP = 0;
+            endGame("You Lose!");
+          }
+        }
+      }
+    }
+
+    // Reward the killer with half the cost of the destroyed unit
+    function rewardKill(deadUnit, killerSide) {
+      // half the cost
+      const bounty = Math.floor(deadUnit.cost / 2);
+      // If player kills an enemy, add gold to "gold"
+      if (killerSide === "player") {
+        gold += bounty;
+      }
+      // If enemy kills a player unit, do nothing (unless you want the enemy to have gold)
+      // (We are not currently tracking the enemy's gold, but you could if you wish.)
+    }
+
+    /*****************************************************************
+     * SPAWNING UNITS
+     *****************************************************************/
+    function spawnPlayerUnit(unitDef) {
+      if (gameOver) return;
+      if (gold < unitDef.cost) return;
+
+      gold -= unitDef.cost;
+      const unitElem = document.createElement("div");
+      unitElem.classList.add("unit");
+      unitElem.style.background = unitDef.color;
+      unitElem.textContent = unitDef.name.charAt(0).toUpperCase();
+
+      const newUnit = {
+        ...unitDef,
+        x: 70, // near player's base
+        hp: unitDef.maxHP,
+        element: unitElem,
+        side: "player",
+        cooldown: 0
+      };
+      positionUnitElem(newUnit);
+      gameContainer.appendChild(unitElem);
+      playerUnits.push(newUnit);
+      updateUI();
+    }
+
+    function spawnEnemyUnit() {
+      if (gameOver) return;
+      const eraData = eras[enemyEraIndex];
+      const units = eraData.units;
+      const randomUnitDef = units[Math.floor(Math.random() * units.length)];
+
+      const unitElem = document.createElement("div");
+      unitElem.classList.add("unit");
+      unitElem.style.background = "red"; 
+      unitElem.textContent = randomUnitDef.name.charAt(0).toUpperCase();
+
+      const newUnit = {
+        ...randomUnitDef,
+        x: 730, // near enemy base
+        hp: randomUnitDef.maxHP,
+        element: unitElem,
+        side: "enemy",
+        cooldown: 0
+      };
+      positionUnitElem(newUnit);
+      gameContainer.appendChild(unitElem);
+      enemyUnits.push(newUnit);
+    }
+
+    /*****************************************************************
+     * COLLISION / POSITIONING
+     *****************************************************************/
+    function positionUnitElem(unit) {
+      unit.element.style.left = unit.x + "px";
+    }
+
+    function resolveSameSideCollisions() {
+      // Sort player units by x (ascending)
+      playerUnits.sort((a, b) => a.x - b.x);
+      for (let i = 1; i < playerUnits.length; i++) {
+        const prev = playerUnits[i - 1];
+        const curr = playerUnits[i];
+        const minDist = 22;
+        if (curr.x - prev.x < minDist) {
+          curr.x = prev.x + minDist; 
+        }
+      }
+
+      // Sort enemy units by x (descending)
+      enemyUnits.sort((a, b) => b.x - a.x);
+      for (let i = 1; i < enemyUnits.length; i++) {
+        const prev = enemyUnits[i - 1];
+        const curr = enemyUnits[i];
+        const minDist = 22;
+        if (prev.x - curr.x < minDist) {
+          curr.x = prev.x - minDist;
+        }
+      }
+    }
+
+    const playerBaseRightEdge = 60;
+    const enemyBaseLeftEdge  = 740;
+
+    /*****************************************************************
+     * MAIN UPDATE (MOVEMENT / ATTACKS)
+     *****************************************************************/
+    function updateUnits() {
+      // Player units
+      for (let pUnit of playerUnits) {
+        if (pUnit.cooldown > 0) {
+          pUnit.cooldown -= 1;
+        }
+
+        const targetEnemy = findTarget(pUnit, enemyUnits);
+        if (targetEnemy) {
+          if (pUnit.range > 20) {
+            // Ranged attack
+            if (pUnit.cooldown <= 0) {
+              createProjectile(
+                pUnit.x, 90,
+                targetEnemy.x, 90,
+                3,
+                pUnit.attack,
+                "player",
+                "#ffa500" 
+              );
+              pUnit.cooldown = 60; 
+            }
+          } else {
+            // Melee
+            targetEnemy.hp -= pUnit.attack * 0.05; 
+            if (targetEnemy.hp <= 0) {
+              targetEnemy.hp = 0;
+              rewardKill(targetEnemy, "player");
+              removeUnit(enemyUnits, targetEnemy);
+            }
+          }
+        } else {
+          // Move forward unless at the enemy base
+          if (pUnit.x < enemyBaseLeftEdge - 20) {
+            pUnit.x += pUnit.speed;
+          } else {
+            // Damage enemy base
+            enemyBaseHP -= pUnit.attack * 0.02;
+            if (enemyBaseHP <= 0) {
+              enemyBaseHP = 0;
+              endGame("You Win!");
+            }
+          }
+        }
+      }
+
+      // Enemy units
+      for (let eUnit of enemyUnits) {
+        if (eUnit.cooldown > 0) {
+          eUnit.cooldown -= 1;
+        }
+        const targetPlayer = findTarget(eUnit, playerUnits);
+        if (targetPlayer) {
+          if (eUnit.range > 20) {
+            // Ranged
+            if (eUnit.cooldown <= 0) {
+              createProjectile(
+                eUnit.x, 90,
+                targetPlayer.x, 90,
+                3,
+                eUnit.attack,
+                "enemy",
+                "red"
+              );
+              eUnit.cooldown = 60;
+            }
+          } else {
+            // Melee
+            targetPlayer.hp -= eUnit.attack * 0.05;
+            if (targetPlayer.hp <= 0) {
+              targetPlayer.hp = 0;
+              // For fairness, we could also give the enemy "gold" if you want,
+              // but that means tracking enemy gold, which we haven't done.
+              // So we'll just remove the unit here. The enemy won't gain gold.
+              removeUnit(playerUnits, targetPlayer);
+            }
+          }
+        } else {
+          // Move left unless at player base
+          if (eUnit.x > playerBaseRightEdge + 10) {
+            eUnit.x -= eUnit.speed;
+          } else {
+            // Damage player base
+            playerBaseHP -= eUnit.attack * 0.02;
+            if (playerBaseHP <= 0) {
+              playerBaseHP = 0;
+              endGame("You Lose!");
+            }
+          }
+        }
+      }
+
+      // Resolve collisions
+      resolveSameSideCollisions();
+
+      // Update positions in the DOM
+      for (let pUnit of playerUnits) positionUnitElem(pUnit);
+      for (let eUnit of enemyUnits) positionUnitElem(eUnit);
+
+      // Remove dead units
+      cleanDeadUnits(playerUnits);
+      cleanDeadUnits(enemyUnits);
+    }
+
+    function findTarget(unit, enemyArray) {
+      for (let enemy of enemyArray) {
+        const dist = Math.abs(enemy.x - unit.x);
+        if (dist <= unit.range) {
+          return enemy;
+        }
+      }
+      return null;
+    }
+
+    function removeUnit(unitArray, unit) {
+      if (unit.element && unit.element.parentNode) {
+        unit.element.parentNode.removeChild(unit.element);
+      }
+      const idx = unitArray.indexOf(unit);
+      if (idx !== -1) {
+        unitArray.splice(idx, 1);
+      }
+    }
+
+    function cleanDeadUnits(array) {
+      for (let i = array.length - 1; i >= 0; i--) {
+        if (array[i].hp <= 0) {
+          removeUnit(array, array[i]);
+        }
+      }
+    }
+
+    /*****************************************************************
+     * TURRET FIRING
+     *****************************************************************/
+    function updateTurrets() {
+      // We'll let turrets fire once per frame if an enemy is in range
+      if (playerTurret) {
+        const range = playerTurret.range;
+        let found = enemyUnits.find(e => Math.abs(e.x - 70) <= range);
+        if (found) {
+          createProjectile(
+            70, 30,
+            found.x, 90,
+            3,
+            playerTurret.damage,
+            "player",
+            playerTurret.color
+          );
+        }
+      }
+
+      if (enemyTurret) {
+        const range = enemyTurret.range;
+        let found = playerUnits.find(p => Math.abs(p.x - 730) <= range);
+        if (found) {
+          createProjectile(
+            730, 30,
+            found.x, 90,
+            3,
+            enemyTurret.damage,
+            "enemy",
+            enemyTurret.color
+          );
+        }
+      }
+    }
+
+    /*****************************************************************
+     * GAME LOOP
+     *****************************************************************/
+    function gameLoop() {
+      if (gameOver) return;
+      updateUnits();
+      updateTurrets();
+      updateProjectiles();
+      updateUI();
+
+      // Gradually increase gold
+      gold += 0.2;
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    function endGame(message) {
+      alert(message);
+      gameOver = true;
+      clearInterval(spawnIntervalId);
+      clearInterval(enemyUpgradeIntervalId);
+      // Stop game music if you want
+      gameAudio.pause();
+    }
+
+    /*****************************************************************
+     * INITIALIZE GAME
+     *****************************************************************/
+    function initGame() {
+      setBaseAppearance("player");
+      setBaseAppearance("enemy");
+
+      redrawPlayerUnitButtons();
+      redrawTurretButtons();
+      updateUI();
+
+      // Periodically spawn enemies
+      spawnIntervalId = setInterval(() => {
+        spawnEnemyUnit();
+      }, enemySpawnInterval);
+
+      // Enemy tries to upgrade & buy turret every 30s
+      enemyUpgradeIntervalId = setInterval(() => {
+        enemyAutoUpgrade();
+        enemyAutoTurret();
+      }, 30000);
+
+      requestAnimationFrame(gameLoop);
+    }
+  </script>
+</body>
+</html>
