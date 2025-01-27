@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Idle Game Framework</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+      background-color: #f0f8ff;
+      color: #333;
+    }
+    .container {
+      padding: 20px;
+    }
+    .button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 10px;
+      background-color: #4caf50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .button:hover {
+      background-color: #45a049;
+    }
+    .stats {
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Idle Game</h1>
+    <div class="stats">
+      <p>Points: <span id="points">0</span></p>
+      <p>Points Per Second: <span id="pps">0</span></p>
+    </div>
+    <button class="button" onclick="addPoints()">Click Me</button>
+    <button class="button" onclick="buyUpgrade()">Buy Upgrade (Cost: <span id="upgrade-cost">10</span>)</button>
+  </div>
+
+  <script>
+    // Game variables
+    let points = 0;
+    let pointsPerSecond = 0;
+    let upgradeCost = 10;
+
+    // Update stats display
+    function updateStats() {
+      document.getElementById('points').textContent = points;
+      document.getElementById('pps').textContent = pointsPerSecond;
+      document.getElementById('upgrade-cost').textContent = upgradeCost;
+    }
+
+    // Add points on click
+    function addPoints() {
+      points++;
+      updateStats();
+    }
+
+    // Buy an upgrade to increase points per second
+    function buyUpgrade() {
+      if (points >= upgradeCost) {
+        points -= upgradeCost;
+        pointsPerSecond++;
+        upgradeCost = Math.floor(upgradeCost * 1.5); // Increase cost of the upgrade
+        updateStats();
+      } else {
+        alert('Not enough points!');
+      }
+    }
+
+    // Increment points automatically
+    setInterval(() => {
+      points += pointsPerSecond;
+      updateStats();
+    }, 1000); // Runs every second
+
+    // Initial update of stats
+    updateStats();
+  </script>
+</body>
+</html>
