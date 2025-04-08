@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blastblock by Kai :)</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #6dd5fa, #2980b9);
+      color: white;
+      overflow-x: hidden;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(9, 40px);
+      grid-template-rows: repeat(9, 40px);
+      gap: 2px;
+      margin: 20px;
+      background: linear-gradient(145deg, #1e3c72, #2a5298);
+      padding: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .cell {
+      width: 40px;
+      height: 40px;
+      background-color: white;
+      border: 1px solid #ccc;
+      transition: background-color 0.3s ease;
+    }
+    .block-palette {
+      display: flex;
+      gap: 20px;
+      margin-top: 20px;
+    }
+    .block {
+      display: inline-grid;
+      cursor: grab;
+      transform: scale(1);
+      transition: transform 0.2s ease;
+    }
+    .block:hover {
+      transform: scale(1.05);
+    }
+    .block-cell {
+      width: 40px;
+      height: 40px;
+      background-image: linear-gradient(135deg, #00f260, #0575e6);
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+      box-shadow: inset 0 0 6px rgba(255,255,255,0.4);
+    }
+    .hidden-cell {
+      background-color: transparent;
+      border: none;
+    }
+    .score-board {
+      margin-top: 10px;
+      font-size: 1.4em;
+      font-weight: bold;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+    }
+    #resetBtn {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 10px 20px;
+      background: linear-gradient(45deg, #ff416c, #ff4b2b);
+      border: none;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      transition: transform 0.2s ease;
+    }
+    #resetBtn:hover {
+      transform: scale(1.1);
+    }
+    .floating-text {
+      position: absolute;
+      font-size: 1.5em;
+      font-weight: bold;
+      pointer-events: none;
+      animation: floatUp 1s ease-out forwards;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    @keyframes floatUp {
+      0% { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-50px); }
+    }
+  </style>
+</head>
+<body>
+  <h1>Blastblock by Kai :)</h1>
+  <div id="gameGrid" class="grid"></div>
+  <div class="block-palette" id="palette"></div>
+  <div class="score-board">
+    Score: <span id="score">0</span> |
+    High Score: <span id="highScore">0</span>
+  </div>
+  <button id="resetBtn">Reset</button>
+
+  <script>
+    const grid = document.getElementById("gameGrid");
+    const palette = document.getElementById("palette");
+    const scoreDisplay = document.getElementById("score");
+    const highScoreDisplay = document.getElementById("highScore");
+    const resetBtn = document.getElementById("resetBtn");
+    let gridState, score, comboStreak;
+
+    const gradientThemes = [
+      ['#00f260', '#0575e6'], ['#fc466b', '#3f5efb'], ['#f7971e', '#ffd200'],
+      ['#8e2de2', '#4a00e0'], ['#00c6ff', '#0072ff'], ['#f953c6', '#b91d73']
+    ];
+
+    const blocks = [
+      [[1,1,1]], [[1],[1],[1]], [[1,1],[1,1]], [[1,1,1,1]], [[1],[1],[1],[1]],
+      [[1,1,1,1,1]], [[1],[1],[1],[1],[1]], [[1,1,1],[0,1,0],[0,1,0]],
+      [[1,1,1],[1,1,1]], [[1,1],[1,0],[1,1]], [[0,1,0],[1,1,1],[0,1,0]],
+      [[1,1,1],[1,1,1],[1,1,1]]
+    ];
+
+    function setCookie(name, value, days = 365) {
+      const expires = new Date(Date.now() + days * 864e5).toUTCString();
+      document.cookie = `${name}=${value}; expires=${expires}; path=/`;
+    }
+
+    function getCookie(name) {
+      return document.cookie.split("; ").reduce((r, v) => {
+        const parts = v.split("=");
+        return parts[0] === name ? parts[1] : r;
+      }, "");
+    }
+
+    function updateScore(points, comboText = null) {
+      score += points;
+      scoreDisplay.textContent = score;
+      if (comboText) {
+        const float = document.createElement("div");
+        float.className = "floating-text";
+        float.style.left = "50%";
+        float.style.top = "40%";
+        float.style.transform = "translateX(-50%)";
+        float.textContent = comboText;
+        document.body.appendChild(float);
+        setTimeout(() => float.remove(), 1000);
+      }
+      const high = parseInt(getCookie("blastblockHighScore") || 0);
+      if (score > high) {
+        setCookie("blastblockHighScore", score);
+        highScoreDisplay.textContent = score;
+      }
+    }
+
+    function resetGame() {
+      grid.innerHTML = "";
+      gridState = Array(9).fill(null).map(() => Array(9).fill(null));
+      score = 0;
+      comboStreak = 0;
+      scoreDisplay.textContent = "0";
+      generateNewBlocks();
+
+      for (let i = 0; i < 81; i++) {
+        const cell = document.createElement("div");
+        cell.classList.add("cell");
+        cell.dataset.index = i;
+        grid.appendChild(cell);
+      }
+    }
+
+    function createBlock(shape) {
+      const block = document.createElement("div");
+      block.classList.add("block");
+      block.style.gridTemplateColumns = `repeat(${shape[0].length}, 40px)`;
+      block.style.gridTemplateRows = `repeat(${shape.length}, 40px)`;
+      const colors = gradientThemes[Math.floor(Math.random() * gradientThemes.length)];
+
+      shape.forEach(row => {
+        row.forEach(cell => {
+          const cellDiv = document.createElement("div");
+          cellDiv.classList.add("block-cell");
+          if (cell === 0) cellDiv.classList.add("hidden-cell");
+          else cellDiv.style.backgroundImage = `linear-gradient(135deg, ${colors[0]}, ${colors[1]})`;
+          block.appendChild(cellDiv);
+        });
+      });
+
+      block.draggable = true;
+      block.dataset.shape = JSON.stringify(shape);
+      block.addEventListener("dragstart", e => {
+        e.dataTransfer.setData("text/plain", e.target.dataset.shape);
+        e.dataTransfer.setData("text/id", Array.from(palette.children).indexOf(block));
+      });
+
+      palette.appendChild(block);
+    }
+
+    function getRandomBlocks(n) {
+      return [...blocks].sort(() => 0.5 - Math.random()).slice(0, n);
+    }
+
+    function generateNewBlocks() {
+      palette.innerHTML = "";
+      placedBlocks = 0;
+      getRandomBlocks(3).forEach(createBlock);
+    }
+
+    function clearFullLines() {
+      const fullRows = [];
+      const fullCols = [];
+
+      for (let r = 0; r < 9; r++) if (gridState[r].every(cell => cell)) fullRows.push(r);
+      for (let c = 0; c < 9; c++) if (gridState.every(row => row[c])) fullCols.push(c);
+
+      fullRows.forEach(r => {
+        for (let c = 0; c < 9; c++) {
+          gridState[r][c] = null;
+          grid.children[r * 9 + c].style.backgroundColor = "white";
+        }
+      });
+      fullCols.forEach(c => {
+        for (let r = 0; r < 9; r++) {
+          gridState[r][c] = null;
+          grid.children[r * 9 + c].style.backgroundColor = "white";
+        }
+      });
+
+      const cleared = fullRows.length + fullCols.length;
+      if (cleared > 0) {
+        comboStreak++;
+        updateScore(cleared * 10 + comboStreak * 50, `Combo x${comboStreak}! +${cleared * 10 + comboStreak * 50}`);
+      } else {
+        comboStreak = 0;
+      }
+
+      if (gridState.every(row => row.every(cell => cell === null))) {
+        updateScore(200, "ALL CLEAR BONUS! +200 ✨");
+      }
+    }
+
+    function isMovePossible() {
+      const blocksToCheck = Array.from(palette.children).map(b => JSON.parse(b.dataset.shape));
+      for (const shape of blocksToCheck) {
+        const h = shape.length, w = shape[0].length;
+        for (let r = 0; r <= 9 - h; r++) {
+          for (let c = 0; c <= 9 - w; c++) {
+            let fits = true;
+            for (let i = 0; i < h && fits; i++) {
+              for (let j = 0; j < w; j++) {
+                if (shape[i][j] && gridState[r + i][c + j]) {
+                  fits = false;
+                  break;
+                }
+              }
+            }
+            if (fits) return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    function gameOver() {
+      setTimeout(() => {
+        alert("Game Over! Final Score: " + score);
+      }, 100);
+    }
+
+    grid.addEventListener("dragover", e => e.preventDefault());
+    grid.addEventListener("drop", e => {
+      const rect = grid.getBoundingClientRect();
+      const col = Math.floor((e.clientX - rect.left) / 42);
+      const row = Math.floor((e.clientY - rect.top) / 42);
+      const shape = JSON.parse(e.dataTransfer.getData("text/plain"));
+      const paletteIndex = parseInt(e.dataTransfer.getData("text/id"));
+      const h = shape.length, w = shape[0].length;
+
+      if (row + h > 9 || col + w > 9) return;
+
+      for (let r = 0; r < h; r++) {
+        for (let c = 0; c < w; c++) {
+          if (shape[r][c] && gridState[row + r][col + c]) return;
+        }
+      }
+
+      for (let r = 0; r < h; r++) {
+        for (let c = 0; c < w; c++) {
+          if (shape[r][c]) {
+            const index = (row + r) * 9 + (col + c);
+            grid.children[index].style.backgroundColor = "#66bb6a";
+            gridState[row + r][col + c] = 1;
+          }
+        }
+      }
+
+      updateScore(shape.flat().filter(v => v).length);
+      palette.children[paletteIndex].remove();
+      placedBlocks++;
+
+      clearFullLines();
+
+      if (placedBlocks === 3) {
+        generateNewBlocks();
+        if (!isMovePossible()) gameOver();
+      } else if (!isMovePossible()) {
+        gameOver();
+      }
+    });
+
+    resetBtn.addEventListener("click", resetGame);
+    highScoreDisplay.textContent = getCookie("blastblockHighScore") || "0";
+    resetGame();
+  </script>
+</body>
+</html>

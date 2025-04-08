@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doodle Jump Clone</title>
+    <style>
+        body { margin: 0; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; background: lightgray; }
+        canvas { background: lightblue; display: block; }
+        #gameOverScreen {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.5);
+        }
+        #restartButton {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background: lightblue;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        #scoreDisplay {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 20px;
+            font-weight: bold;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="scoreDisplay">Score: 0</div>
+    <div id="gameOverScreen">
+        <h1>You Lose!</h1>
+        <p>Your Score: <span id="finalScore">0</span></p>
+        <button id="restartButton">Restart</button>
+    </div>
+    
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = 400;
+        canvas.height = 600;
+        
+        const player = {
+            x: 200,
+            y: 500,
+            width: 30,
+            height: 30,
+            dx: 0,
+            dy: 0,
+            gravity: 0.4,
+            jumpPower: -12,
+            superJumpPower: -18,
+            highestAltitude: 0
+        };
+
+        let platforms = [];
+        let score = 0;
+
+        function generatePlatforms() {
+            platforms = [];
+            let firstPlatformY = 550;
+            platforms.push({ x: 160, y: firstPlatformY, width: 80, height: 10, breakable: false, hasSpring: false });
+            
+            for (let i = 1; i < 15; i++) {
+                let newX = Math.random() * (canvas.width - 80);
+                let newY = firstPlatformY - i * 40;
+                
+                platforms.push({
+                    x: newX,
+                    y: newY,
+                    width: 80,
+                    height: 10,
+                    breakable: Math.random() < 0.1,
+                    hasSpring: Math.random() < 0.2
+                });
+            }
+        }
+        generatePlatforms();
+
+        function drawPlayer() {
+            ctx.fillStyle = "green";
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+        }
+
+        function drawPlatforms() {
+            platforms.forEach(p => {
+                ctx.fillStyle = p.breakable ? "red" : p.hasSpring ? "blue" : "brown";
+                ctx.fillRect(p.x, p.y, p.width, p.height);
+            });
+        }
+
+        function update() {
+            player.dy += player.gravity;
+            player.y += player.dy;
+            player.x += player.dx;
+            
+            let currentAltitude = 500 - player.y;
+            if (currentAltitude > player.highestAltitude) {
+                player.highestAltitude = currentAltitude;
+                score = Math.floor(player.highestAltitude / 10);
+                document.getElementById("scoreDisplay").innerText = "Score: " + score;
+            }
+
+            if (player.y > canvas.height) {
+                showGameOver();
+            }
+
+            platforms.forEach((p, index) => {
+                if (
+                    player.dy > 0 &&
+                    player.y + player.height > p.y &&
+                    player.y + player.height < p.y + 10 &&
+                    player.x + player.width > p.x &&
+                    player.x < p.x + p.width
+                ) {
+                    if (p.breakable) {
+                        platforms.splice(index, 1);
+                    } else if (p.hasSpring) {
+                        player.dy = player.superJumpPower;
+                    } else {
+                        player.dy = player.jumpPower;
+                    }
+                }
+            });
+
+            if (player.y < canvas.height / 2) {
+                player.y = canvas.height / 2;
+                platforms.forEach(p => {
+                    p.y += Math.abs(player.dy);
+                    if (p.y > canvas.height) {
+                        p.y = 0;
+                        p.x = Math.random() * (canvas.width - 80);
+                        p.breakable = Math.random() < 0.1;
+                        p.hasSpring = Math.random() < 0.2;
+                    }
+                });
+            }
+        }
+
+        function movePlayer(e) {
+            if (e.key === "ArrowLeft") player.dx = -5;
+            if (e.key === "ArrowRight") player.dx = 5;
+        }
+        function stopPlayer(e) {
+            if (e.key === "ArrowLeft" || e.key === "ArrowRight") player.dx = 0;
+        }
+
+        function showGameOver() {
+            document.getElementById("finalScore").innerText = score;
+            document.getElementById("gameOverScreen").style.display = "block";
+        }
+
+        function restartGame() {
+            document.getElementById("gameOverScreen").style.display = "none";
+            player.x = 200;
+            player.y = 500;
+            player.dy = 0;
+            player.highestAltitude = 0;
+            score = 0;
+            document.getElementById("scoreDisplay").innerText = "Score: 0";
+            generatePlatforms();
+        }
+
+        document.addEventListener("keydown", movePlayer);
+        document.addEventListener("keyup", stopPlayer);
+        document.getElementById("restartButton").addEventListener("click", restartGame);
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawPlayer();
+            drawPlatforms();
+            update();
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
+
+

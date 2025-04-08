@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sharknado Adventure</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #222;
+      color: #eee;
+      padding: 20px;
+      margin: 0;
+    }
+    .container {
+      max-width: 800px;
+      margin: auto;
+      text-align: center;
+    }
+    h1 {
+      margin-bottom: 10px;
+    }
+    #score {
+      font-size: 18px;
+      margin-bottom: 20px;
+    }
+    #nodeImage {
+      max-width: 100%;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+    .choice-button {
+      margin: 10px auto;
+      padding: 10px 20px;
+      font-size: 16px;
+      background-color: #ff5722;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      display: block;
+      width: 90%;
+    }
+    .choice-button:hover {
+      background-color: #e64a19;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Sharknado Adventure</h1>
+    <div id="score"></div>
+    <img id="nodeImage" src="" alt="Scene Image">
+    <div id="story"></div>
+    <div id="choices"></div>
+  </div>
+  <script>
+    // Global score variable; starting at 50.
+    let score = 50;
+
+    // Define the narrative nodes with updated image URLs.
+    const storyNodes = {
+      start: {
+        img: "sharkNado.webp",
+        text: "You wake up to a cacophony of sirens and the distant roar of chaos. Outside, a massive Sharknado is tearing through the city. What do you do?",
+        choices: [
+          { text: "Grab your emergency kit and dash to the safe house.", next: "safeHouse", points: +5 },
+          { text: "Race to the rooftop for a better view.", next: "rooftop", points: 0 }
+        ]
+      },
+      safeHouse: {
+        img: "https://www.talkingwallsphoto.com/wp-content/uploads/2022/10/abandoned-guelph-eramosa-house2.jpg",
+        text: "You sprint to the safe house only to find it eerily abandoned. The silence is broken by distant, ominous sounds. Do you:",
+        choices: [
+          { text: "Search the house for clues.", next: "searchHouse", points: +5 },
+          { text: "Leave immediately and head for the chaotic city center.", next: "cityCenter", points: -5 }
+        ]
+      },
+      rooftop: {
+        img: "https://cdn.pixabay.com/photo/2017/08/07/12/51/rooftop-2601383_1280.jpg",
+        text: "On the rooftop, you witness the surreal horror: swirling winds mix with flying sharks. A rescue signal seems possible. Do you:",
+        choices: [
+          { text: "Signal for help with your flare gun.", next: "flare", points: +5 },
+          { text: "Attempt to stabilize the building by gathering resources.", next: "resources", points: -5 }
+        ]
+      },
+      searchHouse: {
+        img: "https://cdn.pixabay.com/photo/2016/11/21/16/47/abandoned-1840383_1280.jpg",
+        text: "Inside the dusty safe house, you uncover a mysterious map pointing to a hidden bunker. Do you:",
+        choices: [
+          { text: "Follow the map to the bunker.", next: "bunker", points: +5 },
+          { text: "Ignore the map and secure the house.", next: "secureHouse", points: 0 }
+        ]
+      },
+      cityCenter: {
+        img: "https://cdn.pixabay.com/photo/2016/11/29/06/15/city-1868701_1280.jpg",
+        text: "The city center is in pandemonium. In the midst of the chaos, a shadowy figure catches your eye. Do you:",
+        choices: [
+          { text: "Follow the mysterious figure down a narrow alley.", next: "alley", points: -5 },
+          { text: "Confront the figure head-on.", next: "confrontationCity", points: -10 }
+        ]
+      },
+      flare: {
+        img: "https://cdn.pixabay.com/photo/2013/07/13/10/07/flare-156289_1280.jpg",
+        text: "Your flare lights up the sky—but it also attracts more of the frenzied sharks. Do you:",
+        choices: [
+          { text: "Leap from the building in a desperate bid to escape.", next: "jumpEscape", points: -5 },
+          { text: "Stay put and hope the rescue team arrives swiftly.", next: "waitRescue", points: +5 }
+        ]
+      },
+      resources: {
+        img: "https://cdn.pixabay.com/photo/2014/12/03/19/51/boxes-555102_1280.jpg",
+        text: "Scavenging the rooftop, you gather supplies that could help fortify a safe area. Do you:",
+        choices: [
+          { text: "Use the supplies to fortify a secure zone.", next: "fortify", points: +5 },
+          { text: "Trade the supplies for crucial information with a stranger.", next: "tradeInfo", points: 0 }
+        ]
+      },
+      bunker: {
+        img: "https://cdn.pixabay.com/photo/2017/01/31/21/24/bunker-2026297_1280.jpg",
+        text: "Following the map leads you to a hidden bunker. The entrance is sealed by a complex puzzle. Do you:",
+        choices: [
+          { text: "Attempt to solve the puzzle.", next: "solvePuzzle", points: +5 },
+          { text: "Force your way in, risking an alarm.", next: "forceEntry", points: -10 }
+        ]
+      },
+      secureHouse: {
+        img: "https://cdn.pixabay.com/photo/2016/11/29/04/09/house-1867066_1280.jpg",
+        text: "You barricade the house, but suddenly, a lurking threat emerges from the shadows. Do you:",
+        choices: [
+          { text: "Fight the threat head-on.", next: "fightThreat", points: 0 },
+          { text: "Evade and hide, waiting for a safer moment.", next: "hideThreat", points: +5 }
+        ]
+      },
+      alley: {
+        img: "https://cdn.pixabay.com/photo/2017/09/05/18/26/alley-2712949_1280.jpg",
+        text: "The alley leads you to a secret society of survivors. They’re wary but offer help—for a price. Do you:",
+        choices: [
+          { text: "Join their ranks (even if it costs you points).", next: "joinSociety", points: -10 },
+          { text: "Decline and continue on your own.", next: "soloPath", points: 0 }
+        ]
+      },
+      confrontationCity: {
+        img: "https://cdn.pixabay.com/photo/2016/10/20/20/34/city-1751481_1280.jpg",
+        text: "Confronting the figure, you realize he’s a double agent working with the Sharknado. Trust shatters. Do you:",
+        choices: [
+          { text: "Attempt a risky escape amidst the chaos.", next: "riskyEscape", points: -10 },
+          { text: "Engage in combat, accepting heavy losses.", next: "combatCity", points: -15 }
+        ]
+      },
+      jumpEscape: {
+        img: "https://cdn.pixabay.com/photo/2017/10/10/15/47/skyscrapers-2830808_1280.jpg",
+        text: "Your jump lands you on a neighboring building—but you’re injured. Do you:",
+        choices: [
+          { text: "Search for medical supplies immediately.", next: "medicalSupplies", points: +5 },
+          { text: "Push through the pain and keep moving.", next: "ignoreInjury", points: -10 }
+        ]
+      },
+      waitRescue: {
+        img: "https://cdn.pixabay.com/photo/2017/12/29/10/12/sky-3047722_1280.jpg",
+        text: "You wait, but the rescue is delayed and the storm worsens. Do you:",
+        choices: [
+          { text: "Attempt to distract the sharks.", next: "distractSharks", points: -5 },
+          { text: "Reposition yourself to a more secure spot.", next: "reposition", points: +5 }
+        ]
+      },
+      fortify: {
+        img: "https://cdn.pixabay.com/photo/2016/04/01/09/12/wall-1300673_1280.jpg",
+        text: "Your makeshift fortification gives you a temporary edge. However, the safe zone remains limited. Do you:",
+        choices: [
+          { text: "Hold your ground and wait it out.", next: "holdGround", points: +5 },
+          { text: "Venture out to scavenge for more supplies.", next: "scavenge", points: -5 }
+        ]
+      },
+      tradeInfo: {
+        img: "https://cdn.pixabay.com/photo/2016/08/04/09/27/handshake-1571232_1280.jpg",
+        text: "Trading supplies for information, you learn of a secret exit from the city. Do you:",
+        choices: [
+          { text: "Follow the exit plan without delay.", next: "exitPlan", points: +10 },
+          { text: "Stay to build alliances with the locals.", next: "alliances", points: 0 }
+        ]
+      },
+      solvePuzzle: {
+        img: "https://cdn.pixabay.com/photo/2017/01/31/13/14/puzzle-2028264_1280.jpg",
+        text: "You solve the intricate puzzle and gain entry to the bunker, where advanced gear awaits. Do you:",
+        choices: [
+          { text: "Equip the gear and plan your next move.", next: "gearUp", points: +10 },
+          { text: "Take the gear and search for other survivors.", next: "searchSurvivors", points: +5 }
+        ]
+      },
+      forceEntry: {
+        img: "https://cdn.pixabay.com/photo/2016/07/30/12/13/breaking-1551925_1280.jpg",
+        text: "Your brute force triggers alarms and alerts hostile forces inside. Do you:",
+        choices: [
+          { text: "Fight your way through the enraged enemies.", next: "fightEnemies", points: -10 },
+          { text: "Sneak away to avoid the confrontation.", next: "sneakAway", points: +5 }
+        ]
+      },
+      fightThreat: {
+        img: "https://cdn.pixabay.com/photo/2017/08/30/07/55/fight-2694803_1280.jpg",
+        text: "You engage the threat fiercely but sustain injuries. Do you:",
+        choices: [
+          { text: "Use your remaining strength to escape.", next: "escapeInjured", points: -5 },
+          { text: "Stand your ground despite mounting losses.", next: "standGround", points: -10 }
+        ]
+      },
+      hideThreat: {
+        img: "https://cdn.pixabay.com/photo/2016/12/13/08/19/park-1890648_1280.jpg",
+        text: "You hide successfully, but the delay costs you dearly. Do you:",
+        choices: [
+          { text: "Risk a fast escape.", next: "fastEscape", points: -5 },
+          { text: "Wait for a better opportunity.", next: "waitOpportunity", points: +5 }
+        ]
+      },
+      joinSociety: {
+        img: "https://cdn.pixabay.com/photo/2015/07/17/22/43/meeting-849238_1280.jpg",
+        text: "You join the secret society—but their ruthless methods quickly wear on your conscience. Do you:",
+        choices: [
+          { text: "Follow their orders, even if it means sacrifices.", next: "societyOrders", points: -10 },
+          { text: "Betray them in hopes of forging your own path.", next: "betraySociety", points: +5 }
+        ]
+      },
+      soloPath: {
+        img: "https://cdn.pixabay.com/photo/2016/11/29/03/53/man-1866862_1280.jpg",
+        text: "Going it alone, you avoid immediate danger but lose potential support. Do you:",
+        choices: [
+          { text: "Attempt to salvage alliances on your own.", next: "salvageAlliances", points: +5 },
+          { text: "Continue solo, relying solely on your instincts.", next: "loneInstincts", points: -5 }
+        ]
+      },
+      riskyEscape: {
+        img: "https://cdn.pixabay.com/photo/2016/12/17/18/38/buildings-1911735_1280.jpg",
+        text: "Your escape is perilously risky, and you lose precious points. Do you:",
+        choices: [
+          { text: "Hide amidst the chaos.", next: "hideInChaos", points: -5 },
+          { text: "Search for a secret passage out.", next: "secretPassage", points: +5 }
+        ]
+      },
+      combatCity: {
+        img: "https://cdn.pixabay.com/photo/2016/08/04/09/12/war-1571696_1280.jpg",
+        text: "Engaging in brutal combat, your resources dwindle. Do you:",
+        choices: [
+          { text: "Retreat to a defensible position.", next: "retreatDefensible", points: +5 },
+          { text: "Make a desperate last stand.", next: "lastStand", points: -10 }
+        ]
+      },
+      medicalSupplies: {
+        img: "https://cdn.pixabay.com/photo/2017/11/13/16/01/first-aid-kit-2941833_1280.jpg",
+        text: "You find some much-needed medical supplies. Do you:",
+        choices: [
+          { text: "Use them immediately to recover.", next: "immediateRecovery", points: +10 },
+          { text: "Save them for a critical moment.", next: "saveSupplies", points: +5 }
+        ]
+      },
+      ignoreInjury: {
+        img: "https://cdn.pixabay.com/photo/2015/01/08/18/26/people-593316_1280.jpg",
+        text: "Ignoring the pain, you push onward—at a great cost. Do you:",
+        choices: [
+          { text: "Desperately search for help.", next: "desperateHelp", points: -10 },
+          { text: "Keep moving, even if it means risking collapse.", next: "riskCollapse", points: -15 }
+        ]
+      },
+      distractSharks: {
+        img: "https://cdn.pixabay.com/photo/2015/12/08/00/29/throw-1082247_1280.jpg",
+        text: "Your attempt to distract the sharks partially works, but you lose energy. Do you:",
+        choices: [
+          { text: "Make a run for a nearby safe zone.", next: "runSafeZone", points: +5 },
+          { text: "Conserve energy and hide a while longer.", next: "conserveEnergy", points: 0 }
+        ]
+      },
+      reposition: {
+        img: "https://cdn.pixabay.com/photo/2017/01/22/19/39/man-2003484_1280.jpg",
+        text: "Repositioning gives you a strategic view of the chaos. Do you:",
+        choices: [
+          { text: "Plan a counterattack.", next: "counterAttack", points: +10 },
+          { text: "Evacuate while you still can.", next: "evacuate", points: -5 }
+        ]
+      },
+      holdGround: {
+        img: "https://cdn.pixabay.com/photo/2018/03/05/16/55/soldier-3209760_1280.jpg",
+        text: "Holding your ground, you fend off minor threats. Do you:",
+        choices: [
+          { text: "Call for reinforcements.", next: "callReinforcements", points: +10 },
+          { text: "Fortify further and wait it out.", next: "waitItOut", points: 0 }
+        ]
+      },
+      scavenge: {
+        img: "https://cdn.pixabay.com/photo/2018/01/22/09/08/buildings-3093342_1280.jpg",
+        text: "While scavenging, you encounter dangerous adversaries. Do you:",
+        choices: [
+          { text: "Fight them off to secure the supplies.", next: "fightForSupplies", points: -10 },
+          { text: "Avoid confrontation and retreat.", next: "retreatFromScavenge", points: +5 }
+        ]
+      },
+      exitPlan: {
+        img: "https://cdn.pixabay.com/photo/2015/01/21/16/15/tunnel-606083_1280.jpg",
+        text: "Following the secret exit plan, you navigate through dark tunnels. Do you:",
+        choices: [
+          { text: "Trust the map completely.", next: "trustMap", points: +5 },
+          { text: "Stay cautious and scout ahead.", next: "scoutAhead", points: 0 }
+        ]
+      },
+      alliances: {
+        img: "https://cdn.pixabay.com/photo/2017/08/10/07/32/handshake-2618123_1280.jpg",
+        text: "Building alliances grants you resources—but also obligations. Do you:",
+        choices: [
+          { text: "Honor the alliances despite the cost.", next: "honorAlliances", points: +10 },
+          { text: "Break away to avoid debt.", next: "breakAlliances", points: -10 }
+        ]
+      },
+      gearUp: {
+        img: "https://cdn.pixabay.com/photo/2017/03/06/22/20/survival-2127678_1280.jpg",
+        text: "Equipped with advanced gear, you become a formidable survivor. Your journey ends in Triumph."
+      },
+      searchSurvivors: {
+        img: "https://cdn.pixabay.com/photo/2016/01/19/17/34/abandoned-1144632_1280.jpg",
+        text: "Your search for survivors pays off, though the journey remains perilous. Ending: Hopeful Unity."
+      },
+      fightEnemies: {
+        img: "https://cdn.pixabay.com/photo/2017/07/31/12/16/war-2555691_1280.jpg",
+        text: "You battle fiercely, but the heavy losses diminish your score. Ending: Pyrrhic Victory."
+      },
+      sneakAway: {
+        img: "https://cdn.pixabay.com/photo/2016/11/23/15/06/street-1851940_1280.jpg",
+        text: "You slip away quietly, though the missed opportunities cost you dearly. Ending: Narrow Escape."
+      },
+      escapeInjured: {
+        img: "https://cdn.pixabay.com/photo/2017/06/27/07/17/city-2448289_1280.jpg",
+        text: "Injured but determined, you make a daring escape—albeit with a lower score. Ending: Bittersweet Escape."
+      },
+      standGround: {
+        img: "https://cdn.pixabay.com/photo/2016/02/19/10/00/defense-1209158_1280.jpg",
+        text: "Standing your ground leads to a stalemate, and you pay the price. Ending: Tragic Stand."
+      },
+      fastEscape: {
+        img: "https://cdn.pixabay.com/photo/2018/01/16/07/11/run-3083513_1280.jpg",
+        text: "A hasty exit saves you—but valuable time and points are lost. Ending: Hasty Exit."
+      },
+      waitOpportunity: {
+        img: "https://cdn.pixabay.com/photo/2016/03/27/22/22/wait-1285988_1280.jpg",
+        text: "Waiting finally pays off as unexpected help arrives, partially restoring your score. Ending: Fortuitous Wait."
+      },
+      societyOrders: {
+        img: "https://cdn.pixabay.com/photo/2017/01/12/18/00/dystopia-1977807_1280.jpg",
+        text: "Following ruthless orders, you survive—but at a steep moral and point cost. Ending: Dark Allegiance."
+      },
+      betraySociety: {
+        img: "https://cdn.pixabay.com/photo/2016/11/19/18/06/mask-1839674_1280.jpg",
+        text: "Betraying the society regains some lost trust, though not without risk. Ending: Rebellious Freedom."
+      },
+      salvageAlliances: {
+        img: "https://cdn.pixabay.com/photo/2016/03/27/19/33/handshake-1284492_1280.jpg",
+        text: "You manage to salvage alliances and boost your score. Ending: Rebuilt Bonds."
+      },
+      loneInstincts: {
+        img: "https://cdn.pixabay.com/photo/2015/01/08/18/26/lonely-593311_1280.jpg",
+        text: "Relying solely on your instincts, you survive—but at a heavy point cost. Ending: Lonely Survivor."
+      },
+      hideInChaos: {
+        img: "https://cdn.pixabay.com/photo/2018/03/14/15/30/crowd-3228870_1280.jpg",
+        text: "Hiding amid the chaos saves you momentarily, though your score suffers. Ending: Temporary Refuge."
+      },
+      secretPassage: {
+        img: "https://cdn.pixabay.com/photo/2014/12/15/17/16/tunnel-570018_1280.jpg",
+        text: "A secret passage leads you out, restoring some lost points. Ending: Clever Escape."
+      },
+      retreatDefensible: {
+        img: "https://cdn.pixabay.com/photo/2015/09/18/20/40/building-951886_1280.jpg",
+        text: "Retreating to a defensible position lets you regroup, though your score takes a hit. Ending: Strategic Retreat."
+      },
+      lastStand: {
+        img: "https://cdn.pixabay.com/photo/2015/09/18/20/40/battle-951885_1280.jpg",
+        text: "Your desperate last stand is heroic—but disastrous for your overall score. Ending: Tragic Hero."
+      },
+      immediateRecovery: {
+        img: "https://cdn.pixabay.com/photo/2018/02/21/10/16/recovery-3164734_1280.jpg",
+        text: "Using the supplies, you recover quickly and boost your score. Ending: Resilient Recovery."
+      },
+      saveSupplies: {
+        img: "https://cdn.pixabay.com/photo/2015/06/19/14/14/boxes-815383_1280.jpg",
+        text: "Saving the supplies for later proves wise, with a moderate improvement in your score. Ending: Calculated Recovery."
+      },
+      desperateHelp: {
+        img: "https://cdn.pixabay.com/photo/2015/05/15/14/42/first-aid-768197_1280.jpg",
+        text: "Desperate for aid, you risk everything—and your score plummets. Ending: Doomed Plea."
+      },
+      riskCollapse: {
+        img: "https://cdn.pixabay.com/photo/2014/10/26/19/38/ruins-505818_1280.jpg",
+        text: "Pushing on despite all odds leads to collapse. Ending: Fatal Overreach."
+      },
+      runSafeZone: {
+        img: "https://cdn.pixabay.com/photo/2016/11/19/18/06/run-1839670_1280.jpg",
+        text: "You sprint to a safe zone, saving yourself at the cost of some points. Ending: Swift Salvation."
+      },
+      conserveEnergy: {
+        img: "https://cdn.pixabay.com/photo/2016/10/09/14/29/sleeping-1725501_1280.jpg",
+        text: "Conserving energy helps you endure, though momentum is lost. Ending: Steady Survival."
+      },
+      counterAttack: {
+        img: "https://cdn.pixabay.com/photo/2016/04/01/09/13/soldier-1300675_1280.jpg",
+        text: "Your counterattack regains lost ground, improving your score. Ending: Retaliatory Strike."
+      },
+      evacuate: {
+        img: "https://cdn.pixabay.com/photo/2016/03/26/22/17/people-1283174_1280.jpg",
+        text: "Evacuating saves you, but your score takes a further hit. Ending: Timely Escape."
+      },
+      callReinforcements: {
+        img: "https://cdn.pixabay.com/photo/2016/03/26/22/17/phone-1283175_1280.jpg",
+        text: "Calling for reinforcements bolsters your defenses and your score. Ending: United Front."
+      },
+      waitItOut: {
+        img: "https://cdn.pixabay.com/photo/2016/04/01/09/12/wait-1300672_1280.jpg",
+        text: "Waiting out the siege is taxing, but ultimately effective. Ending: Patient Endurance."
+      },
+      fightForSupplies: {
+        img: "https://cdn.pixabay.com/photo/2016/11/29/04/10/fight-1867070_1280.jpg",
+        text: "Fighting off adversaries secures the supplies, though you lose points. Ending: Hard-Won Victory."
+      },
+      retreatFromScavenge: {
+        img: "https://cdn.pixabay.com/photo/2018/02/21/14/24/exit-3164703_1280.jpg",
+        text: "Retreating avoids further danger but costs you potential gains. Ending: Cautious Withdrawal."
+      },
+      trustMap: {
+        img: "https://cdn.pixabay.com/photo/2016/11/18/13/20/map-1836358_1280.jpg",
+        text: "Trusting the map completely guides you safely out, with a score boost. Ending: Guided Escape."
+      },
+      scoutAhead: {
+        img: "https://cdn.pixabay.com/photo/2016/11/29/08/07/binoculars-1869621_1280.jpg",
+        text: "Scouting ahead reveals hidden dangers; you lose some points but survive. Ending: Vigilant Exit."
+      },
+      honorAlliances: {
+        img: "https://cdn.pixabay.com/photo/2017/06/20/18/24/team-2423352_1280.jpg",
+        text: "Honoring your alliances secures long-term survival and improves your score. Ending: Loyal Unity."
+      },
+      breakAlliances: {
+        img: "https://cdn.pixabay.com/photo/2017/02/07/22/27/broken-2045235_1280.jpg",
+        text: "Breaking alliances frees you, but at a steep score cost. Ending: Isolated Freedom."
+      }
+    };
+
+    // Function to render each node.
+    function renderNode(nodeKey) {
+      const node = storyNodes[nodeKey];
+      const storyDiv = document.getElementById('story');
+      const choicesDiv = document.getElementById('choices');
+      const imgEl = document.getElementById('nodeImage');
+      const scoreDiv = document.getElementById('score');
+
+      // Update the image and score display.
+      imgEl.src = node.img || "";
+      scoreDiv.innerHTML = `<strong>Score:</strong> ${score}`;
+
+      // Display the narrative text.
+      storyDiv.innerHTML = `<p>${node.text}</p>`;
+      choicesDiv.innerHTML = '';
+
+      // If no choices, it's an ending node.
+      if (!node.choices || node.choices.length === 0) {
+        storyDiv.innerHTML += `<p><strong>Final Score:</strong> ${score}</p>`;
+        // Provide a restart button.
+        const restartBtn = document.createElement('button');
+        restartBtn.textContent = "Restart Adventure";
+        restartBtn.className = "choice-button";
+        restartBtn.onclick = () => {
+          score = 50; // Reset score
+          renderNode("start");
+        };
+        choicesDiv.appendChild(restartBtn);
+      } else {
+        // Render available choices.
+        node.choices.forEach(choice => {
+          const btn = document.createElement('button');
+          btn.textContent = choice.text;
+          btn.className = "choice-button";
+          btn.onclick = () => {
+            score += choice.points;
+            renderNode(choice.next);
+          };
+          choicesDiv.appendChild(btn);
+        });
+      }
+    }
+
+    // Start the adventure.
+    renderNode("start");
+  </script>
+</body>
+</html>
