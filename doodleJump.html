@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Doodle Jump Style (With Directional Sprites)</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #fdfdfd;
+    font-family: sans-serif;
+  }
+  canvas {
+    display: block;
+    margin: 0 auto;
+    background: repeating-linear-gradient(0deg, #fff, #fff 28px, #ccc 29px);
+    border: 3px solid #666;
+  }
+  #scoreDisplay {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.8);
+    padding: 8px 14px;
+    border: 2px solid #333;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: bold;
+    z-index: 10;
+  }
+  #gameOverScreen {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 20px;
+    border: 3px solid #444;
+    text-align: center;
+    z-index: 10;
+  }
+  #restartButton {
+    margin-top: 10px;
+    padding: 10px 20px;
+    background: #88d;
+    border: none;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas" width="400" height="600"></canvas>
+<div id="scoreDisplay">Score: 0</div>
+<div id="gameOverScreen">
+  <h2>You Lost!</h2>
+  <p>Your Score: <span id="finalScore">0</span></p>
+  <button id="restartButton">Restart</button>
+</div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// Images
+const doodleImage = new Image();
+doodleImage.src = "doodle.png";
+
+const reverseDoodle = new Image();
+reverseDoodle.src = "reverseDoodle.png";
+
+const springImage = new Image();
+springImage.src = "spring.png";
+
+const alienImage = new Image();
+alienImage.src = "alien.png";
+
+const jetpackImage = new Image();
+jetpackImage.src = "jetpack.png"; 
+
+const jetpackDoodleImage = new Image();
+jetpackDoodleImage.src = "doodleWithJetpack.png";
+
+
+// Player object
+const player = {
+  x: 180,
+  y: 500,
+  width: 60,
+  height: 60,
+  dy: 0,
+  dx: 0,
+  gravity: 0.3,
+  jumpPower: -9,
+  superJumpPower: -14,
+  facing: 'left',
+  jetpackActive: false,
+  jetpackTimer: 0
+
+};
+
+let platforms = [];
+let score = 0;
+let gameHeight = 0;
+let aliens = [];
+let projectiles = [];
+let breakableHistory = [];
+
+const ALIEN_SPAWN_SCORE = 750;
+const ALIEN_SPAWN_CHANCE = 0.003;
+const PLATFORM_COUNT = 15;
+
+function generatePlatforms() {
+  platforms = [];
+  breakableHistory = [];
+  let baseY = 570;
+
+  platforms.push({ x: 160, y: baseY, width: 80, height: 10, breakable: false, hasSpring: false });
+
+  //i is the platform # and determines the size
+  for (let i = 1; i < PLATFORM_COUNT; i++) {
+    const sizeFactor = Math.max(80 - i * 2, 40);
+    const randWidth = sizeFactor + Math.random() * sizeFactor;
+    const randX = Math.random() * (canvas.width - randWidth);
+    const randY = baseY - i * 40;
+
+    const currentScore = Math.floor(gameHeight / 10);
+    const springChance = 0.2 * Math.pow(0.5, Math.floor(currentScore / 300));
+    const allowBreakable =
+      (currentScore < 300 && !(breakableHistory.slice(-2).every(v => v))) ||
+      (currentScore >= 300 && !(breakableHistory.slice(-1).every(v => v)));
+
+    const isBreakable = allowBreakable && Math.random() < 0.1;
+    const hasSpring = !isBreakable && Math.random() < springChance;
+    const hasJetpack = !isBreakable && !hasSpring && Math.random() < 0.1;
+
+
+    breakableHistory.push(isBreakable);
+    if (breakableHistory.length > 2) breakableHistory.shift();
+
+    platforms.push({
+      x: randX,
+      y: randY,
+      width: randWidth,
+      height: 10,
+      breakable: isBreakable,
+      hasSpring: hasSpring,
+      hasJetpack: hasJetpack
+    });
+  }
+}
+
+function spawnAlien() {
+  aliens.push({ x: Math.random() * (canvas.width - 30), y: -30, width: 30, height: 30, dy: 0.75 });
+}
+
+function drawPlayer() {
+  const imageToUse = player.jetpackActive
+    ? jetpackDoodleImage
+    : (player.facing === 'right' ? reverseDoodle : doodleImage);
+  ctx.drawImage(imageToUse, player.x, player.y, player.width, player.height);
+}
+
+
+function drawPlatforms() {
+  platforms.forEach(p => {
+    ctx.fillStyle = p.hasSpring ? "blue" : p.breakable ? "#cc4444" : "#a0522d";
+
+    const radius = 5;
+    ctx.beginPath();
+    ctx.moveTo(p.x + radius, p.y);
+    ctx.lineTo(p.x + p.width - radius, p.y);
+    ctx.quadraticCurveTo(p.x + p.width, p.y, p.x + p.width, p.y + radius);
+    ctx.lineTo(p.x + p.width, p.y + p.height - radius);
+    ctx.quadraticCurveTo(p.x + p.width, p.y + p.height, p.x + p.width - radius, p.y + p.height);
+    ctx.lineTo(p.x + radius, p.y + p.height);
+    ctx.quadraticCurveTo(p.x, p.y + p.height, p.x, p.y + p.height - radius);
+    ctx.lineTo(p.x, p.y + radius);
+    ctx.quadraticCurveTo(p.x, p.y, p.x + radius, p.y);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "black";
+    ctx.stroke();
+
+    if (p.hasSpring) {
+      ctx.drawImage(springImage, p.x + p.width / 2 - 10, p.y - 15, 20, 20);
+    }
+    if (p.hasJetpack) {
+      ctx.drawImage(jetpackImage, p.x + p.width / 2 - 25, p.y - 50, 50, 50);
+    }
+
+  });
+}
+
+function updateAliens() {
+  if (score > ALIEN_SPAWN_SCORE && Math.random() < ALIEN_SPAWN_CHANCE) {
+    spawnAlien();
+  }
+
+  aliens.forEach((alien, idx) => {
+    alien.y += alien.dy;
+    if (alien.y > canvas.height + alien.height) aliens.splice(idx, 1);
+  });
+}
+
+function drawAliens() {
+  aliens.forEach(alien => {
+    ctx.drawImage(alienImage, alien.x, alien.y, alien.width, alien.height);
+  });
+}
+
+function updateProjectiles() {
+  projectiles.forEach((proj, idx) => {
+    proj.y += proj.dy;
+    if (proj.y + proj.height < 0) {
+      projectiles.splice(idx, 1);
+      return;
+    }
+
+    aliens.forEach((alien, alienIdx) => {
+      if (
+        proj.x < alien.x + alien.width &&
+        proj.x + proj.width > alien.x &&
+        proj.y < alien.y + alien.height &&
+        proj.y + proj.height > alien.y
+      ) {
+        aliens.splice(alienIdx, 1);
+        projectiles.splice(idx, 1);
+      }
+    });
+  });
+}
+
+function drawProjectiles() {
+  ctx.fillStyle = "red";
+  projectiles.forEach(proj => {
+    ctx.fillRect(proj.x, proj.y, proj.width, proj.height);
+  });
+}
+
+function update() {
+  player.dy += player.gravity;
+  player.y += player.dy;
+  player.x += player.dx;
+
+  if (player.x < -player.width) player.x = canvas.width;
+  if (player.x > canvas.width) player.x = -player.width;
+
+  if (player.jetpackActive) {
+    player.dy = -6;
+    player.jetpackTimer--;
+    if (player.jetpackTimer <= 0) {
+      player.jetpackActive = false;
+    }
+  }
+
+  //platform collision check
+  platforms.forEach((p, index) => {
+    if (!player.jetpackActive && player.dy > 0 &&
+      player.y + player.height < p.y + p.height &&
+      player.y + player.height > p.y &&
+      player.x + player.width > p.x &&
+      player.x < p.x + p.width) {
+
+      if (p.hasJetpack) {
+        player.jetpackActive = true;
+        player.jetpackTimer = 300; // 5 seconds at 60fps
+        p.hasJetpack = false;
+      } else if (p.breakable) {
+        platforms.splice(index, 1);
+      } else if (p.hasSpring) {
+        player.dy = player.superJumpPower;
+      } else {
+        player.dy = player.jumpPower;
+      }
+
+    }
+
+  });
+
+  if (player.y < canvas.height / 2) {
+    const delta = canvas.height / 2 - player.y;
+    gameHeight += delta;
+    player.y = canvas.height / 2;
+
+    platforms.forEach(p => {
+      p.y += delta;
+      if (p.y > canvas.height) {
+        const sizeFactor = Math.max(40, 80 - (gameHeight / 400));
+        const newWidth = sizeFactor + Math.random() * sizeFactor;
+
+        const verticalSpacing = Math.min(110, 30 + gameHeight / 150);
+        p.y = 0 - verticalSpacing;                
+
+        p.y = 0;
+        p.x = Math.random() * (canvas.width - newWidth);
+        p.width = newWidth;
+
+        const currentScore = Math.floor(gameHeight / 10);
+        const springChance = 0.2 * Math.pow(0.5, Math.floor(currentScore / 300));
+        const allowBreakable =
+          (currentScore < 300 && !(breakableHistory.slice(-2).every(v => v))) ||
+          (currentScore >= 300 && !(breakableHistory.slice(-1).every(v => v)));
+
+        const isBreakable = allowBreakable && Math.random() < 0.1;
+        const hasSpring = !isBreakable && Math.random() < springChance;
+        const hasJetpack = !isBreakable && !hasSpring && Math.random() <9;
+
+        breakableHistory.push(isBreakable);
+        if (breakableHistory.length > 2) breakableHistory.shift();
+
+        p.breakable = isBreakable;
+        p.hasSpring = hasSpring;
+      }
+
+    });
+  }
+
+  score = Math.floor(gameHeight / 10);
+  document.getElementById("scoreDisplay").innerText = "Score: " + score;
+
+  if (player.y > canvas.height) endGame();
+
+  updateAliens();
+  updateProjectiles();
+
+  if (!player.jetpackActive) {
+    aliens.forEach(alien => {
+      if (
+        player.x < alien.x + alien.width &&
+        player.x + player.width > alien.x &&
+        player.y < alien.y + alien.height &&
+        player.y + player.height > alien.y
+      ) {
+        endGame();
+      }
+    });
+  }
+
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawPlatforms();
+  drawPlayer();
+  drawAliens();
+  drawProjectiles();
+}
+
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+function endGame() {
+  document.getElementById("finalScore").innerText = score;
+  document.getElementById("gameOverScreen").style.display = "block";
+}
+
+function restartGame() {
+  player.x = 180;
+  player.y = 500;
+  player.dy = 0;
+  player.dx = 0;
+  player.facing = 'left';
+  score = 0;
+  gameHeight = 0;
+  aliens = [];
+  projectiles = [];
+  generatePlatforms();
+  document.getElementById("gameOverScreen").style.display = "none";
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowLeft") {
+    player.dx = -4;
+    player.facing = 'left';
+  }
+  if (e.key === "ArrowRight") {
+    player.dx = 4;
+    player.facing = 'right';
+  }
+  if (e.key === "ArrowUp") {
+    projectiles.push({
+      x: player.x + player.width / 2 - 2,
+      y: player.y,
+      width: 4,
+      height: 10,
+      dy: -6
+    });
+  }
+});
+
+document.addEventListener("keyup", e => {
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    player.dx = 0;
+  }
+});
+
+document.getElementById("restartButton").addEventListener("click", restartGame);
+
+// Start game
+gameLoop();
+</script>
+</body>
+</html>
+
+
+

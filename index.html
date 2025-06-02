@@ -1,198 +1,382 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kai Parnes - Portfolio</title>
-    <style>
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background-color: #303633;
-            color: white;
-        }
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>Kai Parnes - Portfolio</title>
+   <style>
+       body {
+           margin: 0;
+           font-family: Arial, sans-serif;
+           background-color: #003f4e;
+           color: white;
+       }
 
-        header {
-            background-color: #e0f7fa;
-            color: #00796b;
-            padding: 20px;
-            text-align: center;
-        }
+       header {
+           background-color: #e0f7fa;
+           color: #00796b;
+           padding: 20px;
+           text-align: center;
+       }
 
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 20px;
-        }
+       .container {
+           max-width: 900px;
+           margin: 0 auto;
+           padding: 20px;
+       }
 
-        .intro {
-            text-align: center;
-            margin-bottom: 40px;
-        }
+       .intro {
+           text-align: center;
+           margin-bottom: 40px;
+       }
 
-        .intro h1 {
-            font-size: 2.5rem;
-            color: #00796b;
-        }
+       .intro h1 {
+           font-size: 2.5rem;
+           color: #76dfd2;
+       }
 
-        .intro p {
-            font-size: 1.2rem;
-            color: white;
-        }
+       .intro p {
+           font-size: 1.2rem;
+           color: white;
+       }
 
-        .skills {
-            margin-bottom: 40px;
-        }
+       .skills {
+           margin-bottom: 40px;
+       }
 
-        .skills h2 {
-            font-size: 2rem;
-            margin-bottom: 20px;
-            color: #00796b;
-        }
+       .skills h2 {
+           font-size: 2rem;
+           margin-bottom: 20px;
+           color: #76dfd2;
+       }
 
-        .skills ul {
-            list-style: none;
-            padding: 0;
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
+       .skills ul {
+           list-style: none;
+           padding: 0;
+           display: flex;
+           gap: 10px;
+           flex-wrap: wrap;
+       }
 
-        .skills li {
-            background-color: #b2dfdb;
-            color: #004d40;
-            padding: 10px 20px;
-            border-radius: 20px;
-            font-size: 1rem;
-        }
+       .skills li {
+           background-color: #b2dfdb;
+           color: #004d40;
+           padding: 10px 20px;
+           border-radius: 20px;
+           font-size: 1rem;
+           transition: transform 0.2s;
+       }
+       .skills li:hover{
+           transform: scale(1.05);
+       }
 
-        .projects {
-            margin-bottom: 40px;
-        }
+       .projects {
+           margin-bottom: 40px;
+       }
 
-        .projects h2 {
-            font-size: 2rem;
-            margin-bottom: 20px;
-            color: #00796b;
-        }
+       .projects h2 {
+           font-size: 2rem;
+           margin-bottom: 20px;
+           color: #76dfd2;
+       }
 
-        .project-item {
-            cursor: pointer;
-            background-size: cover;
-            background-position: center;
-            height: 200px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: #fff;
-            font-size: 1.5rem;
-            font-weight: bold;
-            text-shadow: 0 2px 5px rgba(0, 0, 0, 0.7);
-            transition: transform 0.2s;
-        }
+       /* Search & filter container */
+       .search-filter-container {
+           display: flex;
+           flex-wrap: wrap;
+           align-items: center;
+           gap: 10px;
+           margin-bottom: 20px;
+       }
 
-        .project-item:hover {
-            transform: scale(1.05);
-        }
+       .search-filter-container input[type="text"],
+       .search-filter-container select {
+           padding: 8px;
+           border-radius: 4px;
+           border: none;
+           font-size: 1rem;
+       }
 
-        .project-blastblock {
-            background-image: url('blastblock.png');
-            background-size: cover;
-            background-position: top;
-            background-repeat: no-repeat;
-        }
-        .project-ageofwar {
-            background-image: url('ageOfWar.png');
-            background-size: cover;
-            background-position: top;
-            background-repeat: no-repeat;
-        }
-        .project-idlegame {
-            background-image: url('idlegame.png');
-            background-size: cover;
-            background-position: top;
-            background-repeat: no-repeat;
-        }
-        .project-snakegame {
-            background-image: url('snakeGame.png');
-            background-size: cover;
-            background-repeat: no-repeat;
-        }
-        .project-sharknado {
-            background-image: url('sharknado.webp');
-            background-size: cover;
-            background-position: top;
-            background-repeat: no-repeat;
-        }
-        footer {
-            text-align: center;
-            padding: 20px;
-            background-color: #e0f7fa;
-            color: #00796b;
-        }
+       .search-filter-container input[type="text"] {
+           flex: 1;
+       }
 
-        @media (max-width: 600px) {
-            .intro h1 {
-                font-size: 2rem;
-            }
+       /* Project item styling */
+       .project-list {
+           display: grid;
+           grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+           gap: 20px;
+       }
 
-            .skills ul {
-                flex-direction: column;
-                gap: 15px;
-            }
-        }
-    </style>
+       .project-item {
+           cursor: pointer;
+           background-size: cover;
+           background-position: center;
+           height: 200px;
+           border-radius: 10px;
+           position: relative;
+           overflow: hidden;
+           transition: transform 0.2s;
+       }
+
+       .project-item:hover {
+           transform: scale(1.05);
+       }
+
+       /* The overlay shown on hover */
+       .project-info {
+           position: absolute;
+           bottom: 0;
+           width: 100%;
+           background: rgba(0, 0, 0, 0.7);
+           color: #fff;
+           padding: 10px;
+           opacity: 0;
+           transform: translateY(100%);
+           transition: all 0.3s ease-in-out;
+       }
+
+       .project-item:hover .project-info {
+           opacity: 1;
+           transform: translateY(0);
+       }
+
+       .project-info h3 {
+           margin: 0 0 5px 0;
+           font-size: 1.2rem;
+           color: #76dfd2;
+       }
+
+       .project-info p {
+           margin: 0;
+           font-size: 0.9rem;
+           line-height: 1.2rem;
+       }
+
+       /* Example background classes (same as original) */
+       .project-blastblock {
+           background-image: url('blastblock.png');
+           background-size: cover;
+           background-position: top;
+       }
+       .project-ageofwar {
+           background-image: url('ageOfWar.png');
+           background-size: cover;
+           background-position: top;
+       }
+       .project-idlegame {
+           background-image: url('idlegame.png');
+           background-position: top;
+       }
+       .project-snakegame {
+           background-image: url('snakeGame.png');
+       }
+       .project-sharknado {
+           background-image: url('sharknado.webp');
+           background-position: top;
+       }
+       .project-doodlejump {
+           background-image: url('doodleJump.png');
+       }
+
+       footer {
+           text-align: center;
+           padding: 20px;
+           background-color: #e0f7fa;
+           color: #00796b;
+       }
+
+       @media (max-width: 600px) {
+           .intro h1 {
+               font-size: 2rem;
+           }
+
+           .skills ul {
+               flex-direction: column;
+               gap: 15px;
+           }
+
+           .project-list {
+               grid-template-columns: 1fr;
+           }
+       }
+   </style>
 </head>
 <body>
-    <header>
-        <h1>Kai Parnes</h1>
-        <p>Developer | JavaScript Enthusiast | Minimalist</p>
-    </header>
+   <header>
+       <h1>Kai Parnes</h1>
+       <p>Developer | JavaScript Enthusiast | Cat Lover</p>
+   </header>
 
-    <div class="container">
-        <section class="intro">
-            <h1>Welcome to My Portfolio</h1>
-            <p>
-                Hi, I’m Kai, a 14-year-old developer with over two years of experience in JavaScript.
-                I’m passionate about creating clean, efficient, and modern designs.
-            </p>
-        </section>
+   <div class="container">
+       <section class="intro">
+           <h1>Welcome to My Portfolio</h1>
+           <p>
+               Hi, I’m Kai, a 14-year-old developer with over two years of experience in JavaScript.
+               I’m passionate about creating clean, efficient, and modern designs.
+           </p>
+       </section>
 
-        <section class="skills">
-            <h2>What I’m Good At</h2>
-            <ul>
-                <li>JavaScript</li>
-                <li>HTML & CSS</li>
-                <li>Frontend Design</li>
-                <li>Git & GitHub</li>
-                <li>Problem-Solving</li>
-            </ul>
-        </section>
+       <section class="skills">
+           <h2>What I’m Good At</h2>
+           <ul>
+               <li>JavaScript</li>
+               <li>HTML & CSS</li>
+               <li>Frontend Design</li>
+               <li>Git & GitHub</li>
+               <li>Problem-Solving</li>
+           </ul>
+       </section>
 
-        <section class="projects">
-            <h2>My Projects</h2>
-            <div class="project-item project-blastblock" onclick="location.href='blastblock.html'">
-                Blastblock
-            </div>  
-            <div class="project-item project-ageofwar" onclick="location.href='ageOfWar.html'">
-                Age of War
-            </div>
-            <div class="project-item project-idlegame" onclick="location.href='idle.html'">
-                Idle burger
-            </div>  
-            <div class="project-item project-snakegame" onclick="location.href='snakeGame.html'">
-                Snake Game
-            </div>  
-            <div class="project-item project-sharknado" onclick="location.href='sharkNado.html'">
-                Sharknado CYOA
-            </div>  
-        </section>
-    </div>
+       <section class="projects">
+           <h2>My Projects</h2>
+           
+           <!-- Search and Filter -->
+           <div class="search-filter-container">
+               <input type="text" id="search-bar" placeholder="Search games...">
+               <select id="category-filter">
+                   <option value="All">All Categories</option>
+               </select>
+           </div>
 
-    <footer>
-        <p>&copy; 2025 Kai Parnes. All rights reserved.</p>
-    </footer>
+           <!-- Projects will be injected here by JavaScript -->
+           <div class="project-list" id="projectList"></div>
+       </section>
+   </div>
+
+   <footer>
+       <p>&copy; 2025 Kai Parnes. All rights reserved.</p>
+   </footer>
+
+   <script>
+       // 1. Define your games in a JavaScript array of objects
+       const games = [
+           {
+               title: "Blast Block",
+               category: "Arcade",
+               description: "Explode colorful blocks in a fast-paced puzzle frenzy!",
+               imageClass: "project-blastblock",
+               link: "blastblock.html"
+           },
+           {
+               title: "Age of War",
+               category: "Strategy",
+               description: "Conquer ages of history in this epic war simulation!",
+               imageClass: "project-ageofwar",
+               link: "ageOfWar.html"
+           },
+           {
+               title: "Cheeseburger Empire",
+               category: "Idle",
+               description: "Grow your burger empire one click at a time!",
+               imageClass: "project-idlegame",
+               link: "Idle.html"
+           },
+           {
+               title: "Snake Game",
+               category: "Classic",
+               description: "Enjoy the retro snake experience with a modern twist!",
+               imageClass: "project-snakegame",
+               link: "snakeGame.html"
+           },
+           {
+               title: "Sharknado CYOA",
+               category: "Adventure",
+               description: "Survive the swirling sharks in this comedic choose-your-own-adventure!",
+               imageClass: "project-sharknado",
+               link: "sharkNado.html"
+           },
+           {
+               title: "Doodle Jump",
+               category: "Arcade",
+               description: "Jump to new heights and dodge enemies in a doodled world!",
+               imageClass: "project-doodlejump",
+               link: "doodleJump.html"
+           },
+           {
+               title: "Doodle Jump",
+               category: "Arcade",
+               description: "Jump to new heights and dodge enemies in a doodled world!",
+               imageClass: "project-doodlejump",
+               link: "doodleJump.html"
+           }
+       ];
+
+       // 2. Get references to the DOM elements
+       const projectList = document.getElementById("projectList");
+       const searchBar = document.getElementById("search-bar");
+       const categoryFilter = document.getElementById("category-filter");
+
+       // 3. Build the categories dynamically
+       // Collect unique categories from the games array and populate the dropdown
+       function populateCategories() {
+           const categories = [...new Set(games.map(game => game.category))];
+           categories.forEach(cat => {
+               const option = document.createElement("option");
+               option.value = cat;
+               option.textContent = cat;
+               categoryFilter.appendChild(option);
+           });
+       }
+
+       // 4. Render function that displays the filtered game list
+       function renderGames(gameArray) {
+           projectList.innerHTML = ""; // Clear any existing content
+           gameArray.forEach(game => {
+               // Create the div for each project
+               const projectItem = document.createElement("div");
+               projectItem.classList.add("project-item", game.imageClass);
+
+               // Onclick to navigate
+               projectItem.onclick = () => {
+                   window.location.href = game.link;
+               };
+
+               // Overlay info container
+               const projectInfo = document.createElement("div");
+               projectInfo.classList.add("project-info");
+
+               // Title
+               const titleElem = document.createElement("h3");
+               titleElem.textContent = game.title;
+
+               // Description
+               const descElem = document.createElement("p");
+               descElem.textContent = game.description;
+
+               projectInfo.appendChild(titleElem);
+               projectInfo.appendChild(descElem);
+               projectItem.appendChild(projectInfo);
+               projectList.appendChild(projectItem);
+           });
+       }
+
+       // 5. Search and Filter logic
+       function filterGames() {
+           const searchTerm = searchBar.value.toLowerCase();
+           const selectedCategory = categoryFilter.value;
+
+           const filtered = games.filter(game => {
+               const matchesSearch = game.title.toLowerCase().includes(searchTerm) 
+                                  || game.description.toLowerCase().includes(searchTerm);
+               const matchesCategory = selectedCategory === "All" 
+                                      || game.category === selectedCategory;
+
+               return matchesSearch && matchesCategory;
+           });
+
+           renderGames(filtered);
+       }
+
+       // 6. Event Listeners
+       searchBar.addEventListener("input", filterGames);
+       categoryFilter.addEventListener("change", filterGames);
+
+       // Initial population
+       populateCategories();
+       renderGames(games);
+   </script>
 </body>
 </html>
+
+
