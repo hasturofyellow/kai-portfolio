@@ -5,89 +5,103 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Doodle Jump Style (With Directional Sprites)</title>
 <style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    background: #fdfdfd;
-    font-family: sans-serif;
-  }
-  canvas {
-    display: block;
-    margin: 0 auto;
-    background: repeating-linear-gradient(0deg, #fff, #fff 28px, #ccc 29px);
-    border: 3px solid #666;
-  }
-  #scoreDisplay {
-    position: absolute;
-    top: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(255, 255, 255, 0.8);
-    padding: 8px 14px;
-    border: 2px solid #333;
-    border-radius: 8px;
-    font-size: 18px;
-    font-weight: bold;
-    z-index: 10;
-  }
-  #gameOverScreen {
-    display: none;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: white;
-    padding: 20px;
-    border: 3px solid #444;
-    text-align: center;
-    z-index: 10;
-  }
-  #restartButton {
-    margin-top: 10px;
-    padding: 10px 20px;
-    background: #88d;
-    border: none;
-    color: white;
-    font-size: 16px;
-    cursor: pointer;
-  }
+ html, body {
+   margin: 0;
+   padding: 0;
+   overflow: hidden;
+   background: #fdfdfd;
+   font-family: sans-serif;
+ }
+ canvas {
+   display: block;
+   margin: 0 auto;
+   background: repeating-linear-gradient(0deg, #fff, #fff 28px, #ccc 29px);
+   border: 3px solid #666;
+ }
+ #scoreDisplay {
+   position: absolute;
+   top: 10px;
+   left: 50%;
+   transform: translateX(-50%);
+   background: rgba(255, 255, 255, 0.8);
+   padding: 8px 14px;
+   border: 2px solid #333;
+   border-radius: 8px;
+   font-size: 18px;
+   font-weight: bold;
+   z-index: 10;
+ }
+ #gameOverScreen {
+   display: none;
+   position: absolute;
+   top: 50%;
+   left: 50%;
+   transform: translate(-50%, -50%);
+   background: white;
+   padding: 20px;
+   border: 3px solid #444;
+   text-align: center;
+   z-index: 10;
+ }
+ #restartButton {
+   margin-top: 10px;
+   padding: 10px 20px;
+   background: #88d;
+   border: none;
+   color: white;
+   font-size: 16px;
+   cursor: pointer;
+ }
+ #jetpackFuel {
+   position: absolute;
+   top: 10px;
+   right: 10px;
+   width: 20px;
+   height: 60px;
+   background-color: #444; /* empty */
+   border: 2px solid #333;
+   border-radius: 6px;
+   overflow: hidden;
+   z-index: 10;
+ }
+ #fuelFill {
+   width: 100%;
+   height: 0%;
+   background-color: yellow;
+   transition: height 0.2s ease, background-color 0.2s ease;
+ }
 </style>
 </head>
 <body>
 <canvas id="gameCanvas" width="400" height="600"></canvas>
 <div id="scoreDisplay">Score: 0</div>
+
+<!-- jet‑pack fuel bar -->
+<div id="jetpackFuel"><div id="fuelFill"></div></div>
+
 <div id="gameOverScreen">
-  <h2>You Lost!</h2>
-  <p>Your Score: <span id="finalScore">0</span></p>
-  <button id="restartButton">Restart</button>
+ <h2>You Lost!</h2>
+ <p>Your Score: <span id="finalScore">0</span></p>
+ <button id="restartButton">Restart</button>
 </div>
 
 <script>
+/* -------------------------------------------------------------
+ *  Resources
+ * ---------------------------------------------------------- */
 const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
+const ctx     = canvas.getContext("2d");
 
-// Images
-const doodleImage = new Image();
-doodleImage.src = "doodle.png";
+const doodleImage        = new Image(); doodleImage.src        = "doodle.png";
+const reverseDoodle      = new Image(); reverseDoodle.src      = "reverseDoodle.png";
+const springImage        = new Image(); springImage.src        = "spring.png";
+const alienImage         = new Image(); alienImage.src         = "alien.png";
+const jetpackImage       = new Image(); jetpackImage.src       = "jetpack.png";
+const jetpackDoodleImage = new Image(); jetpackDoodleImage.src = "doodleWithJetpack.png";
 
-const reverseDoodle = new Image();
-reverseDoodle.src = "reverseDoodle.png";
-
-const springImage = new Image();
-springImage.src = "spring.png";
-
-const alienImage = new Image();
-alienImage.src = "alien.png";
-
-const jetpackImage = new Image();
-jetpackImage.src = "jetpack.png"; 
-
-const jetpackDoodleImage = new Image();
-jetpackDoodleImage.src = "doodleWithJetpack.png";
-
-
-// Player object
+/* -------------------------------------------------------------
+ *  Game state
+ * ---------------------------------------------------------- */
 const player = {
   x: 180,
   y: 500,
@@ -98,254 +112,265 @@ const player = {
   gravity: 0.3,
   jumpPower: -9,
   superJumpPower: -14,
-  facing: 'left',
+  facing: "left",
+  /* jet‑pack data */
   jetpackActive: false,
-  jetpackTimer: 0
-
+  jetpackTimer: 0,           // frames remaining while active
+  jetpackFuel: 0,            // current fuel
+  maxJetpackFuel: 2          // capacity
 };
 
-let platforms = [];
-let score = 0;
-let gameHeight = 0;
-let aliens = [];
-let projectiles = [];
+let platforms        = [];
+let score            = 0;
+let gameHeight       = 0;
+let aliens           = [];
+let projectiles      = [];
 let breakableHistory = [];
 
-const ALIEN_SPAWN_SCORE = 750;
+const ALIEN_SPAWN_SCORE  = 750;
 const ALIEN_SPAWN_CHANCE = 0.003;
-const PLATFORM_COUNT = 15;
+const PLATFORM_COUNT     = 15;
 
+/* -------------------------------------------------------------
+ *  Utility
+ * ---------------------------------------------------------- */
+function updateFuelBar() {
+  const percent = (player.jetpackFuel / player.maxJetpackFuel) * 100;
+  const fill    = document.getElementById("fuelFill");
+  fill.style.height = `${percent}%`;
+  if (percent === 100)      fill.style.backgroundColor = "green";
+  else if (percent > 0)     fill.style.backgroundColor = "yellow";
+  else                      fill.style.backgroundColor = "transparent";
+}
+
+/* -------------------------------------------------------------
+ *  Platform generation
+ * ---------------------------------------------------------- */
 function generatePlatforms() {
-  platforms = [];
+  platforms        = [];
   breakableHistory = [];
-  let baseY = 570;
+  const baseY      = 570;
 
-  platforms.push({ x: 160, y: baseY, width: 80, height: 10, breakable: false, hasSpring: false });
+  // starting platform
+  platforms.push({
+    x: 160, y: baseY, width: 80, height: 10,
+    breakable: false, hasSpring: false, hasJetpack: false
+  });
 
-  //i is the platform # and determines the size
   for (let i = 1; i < PLATFORM_COUNT; i++) {
-    const sizeFactor = Math.max(80 - i * 2, 40);
-    const randWidth = sizeFactor + Math.random() * sizeFactor;
-    const randX = Math.random() * (canvas.width - randWidth);
-    const randY = baseY - i * 40;
+    const sizeFactor   = Math.max(80 - i * 2, 40);
+    const randWidth    = sizeFactor + Math.random() * sizeFactor;
+    const randX        = Math.random() * (canvas.width - randWidth);
+    const randY        = baseY - i * 40;
 
     const currentScore = Math.floor(gameHeight / 10);
     const springChance = 0.2 * Math.pow(0.5, Math.floor(currentScore / 300));
+
     const allowBreakable =
-      (currentScore < 300 && !(breakableHistory.slice(-2).every(v => v))) ||
-      (currentScore >= 300 && !(breakableHistory.slice(-1).every(v => v)));
+      (currentScore < 300 && !breakableHistory.slice(-2).every(v => v)) ||
+      (currentScore >= 300 && !breakableHistory.slice(-1).every(v => v));
 
     const isBreakable = allowBreakable && Math.random() < 0.1;
-    const hasSpring = !isBreakable && Math.random() < springChance;
-    const hasJetpack = !isBreakable && !hasSpring && Math.random() < 0.1;
-
+    const hasSpring   = !isBreakable && Math.random() < springChance;
+    const hasJetpack  = !isBreakable && !hasSpring && Math.random() < 0.05;
 
     breakableHistory.push(isBreakable);
     if (breakableHistory.length > 2) breakableHistory.shift();
 
     platforms.push({
-      x: randX,
-      y: randY,
-      width: randWidth,
-      height: 10,
-      breakable: isBreakable,
-      hasSpring: hasSpring,
-      hasJetpack: hasJetpack
+      x: randX, y: randY, width: randWidth, height: 10,
+      breakable: isBreakable, hasSpring, hasJetpack
     });
   }
 }
 
+/* -------------------------------------------------------------
+ *  Aliens
+ * ---------------------------------------------------------- */
 function spawnAlien() {
   aliens.push({ x: Math.random() * (canvas.width - 30), y: -30, width: 30, height: 30, dy: 0.75 });
 }
-
-function drawPlayer() {
-  const imageToUse = player.jetpackActive
-    ? jetpackDoodleImage
-    : (player.facing === 'right' ? reverseDoodle : doodleImage);
-  ctx.drawImage(imageToUse, player.x, player.y, player.width, player.height);
+function updateAliens() {
+  if (score > ALIEN_SPAWN_SCORE && Math.random() < ALIEN_SPAWN_CHANCE) spawnAlien();
+  aliens = aliens.filter(alien => (alien.y += alien.dy) <= canvas.height + alien.height);
+}
+function drawAliens() {
+  aliens.forEach(alien => ctx.drawImage(alienImage, alien.x, alien.y, alien.width, alien.height));
 }
 
+/* -------------------------------------------------------------
+ *  Projectiles
+ * ---------------------------------------------------------- */
+function updateProjectiles() {
+  projectiles = projectiles.filter(proj => {
+    proj.y += proj.dy;
+    if (proj.y + proj.height < 0) return false;
 
+    aliens = aliens.filter(alien => {
+      const hit =
+        proj.x <  alien.x + alien.width &&
+        proj.x + proj.width > alien.x &&
+        proj.y <  alien.y + alien.height &&
+        proj.y + proj.height > alien.y;
+      if (hit) proj.hit = true;
+      return !hit;
+    });
+    return !proj.hit;
+  });
+}
+function drawProjectiles() {
+  ctx.fillStyle = "red";
+  projectiles.forEach(p => ctx.fillRect(p.x, p.y, p.width, p.height));
+}
+
+/* -------------------------------------------------------------
+ *  Drawing helpers
+ * ---------------------------------------------------------- */
+function drawPlayer() {
+  const img = player.jetpackActive
+    ? jetpackDoodleImage
+    : (player.facing === "right" ? reverseDoodle : doodleImage);
+  ctx.drawImage(img, player.x, player.y, player.width, player.height);
+}
 function drawPlatforms() {
   platforms.forEach(p => {
     ctx.fillStyle = p.hasSpring ? "blue" : p.breakable ? "#cc4444" : "#a0522d";
 
-    const radius = 5;
+    const r = 5;                // corner radius
     ctx.beginPath();
-    ctx.moveTo(p.x + radius, p.y);
-    ctx.lineTo(p.x + p.width - radius, p.y);
-    ctx.quadraticCurveTo(p.x + p.width, p.y, p.x + p.width, p.y + radius);
-    ctx.lineTo(p.x + p.width, p.y + p.height - radius);
-    ctx.quadraticCurveTo(p.x + p.width, p.y + p.height, p.x + p.width - radius, p.y + p.height);
-    ctx.lineTo(p.x + radius, p.y + p.height);
-    ctx.quadraticCurveTo(p.x, p.y + p.height, p.x, p.y + p.height - radius);
-    ctx.lineTo(p.x, p.y + radius);
-    ctx.quadraticCurveTo(p.x, p.y, p.x + radius, p.y);
+    ctx.moveTo(p.x + r,          p.y);
+    ctx.lineTo(p.x + p.width-r,  p.y);
+    ctx.quadraticCurveTo(p.x+p.width, p.y, p.x+p.width, p.y+r);
+    ctx.lineTo(p.x+p.width,      p.y+p.height-r);
+    ctx.quadraticCurveTo(p.x+p.width, p.y+p.height, p.x+p.width-r, p.y+p.height);
+    ctx.lineTo(p.x+r,            p.y+p.height);
+    ctx.quadraticCurveTo(p.x,    p.y+p.height, p.x, p.y+p.height-r);
+    ctx.lineTo(p.x,              p.y+r);
+    ctx.quadraticCurveTo(p.x,    p.y, p.x+r, p.y);
     ctx.closePath();
     ctx.fill();
 
-    ctx.lineWidth = 3;
+    ctx.lineWidth   = 3;
     ctx.strokeStyle = "black";
     ctx.stroke();
 
-    if (p.hasSpring) {
-      ctx.drawImage(springImage, p.x + p.width / 2 - 10, p.y - 15, 20, 20);
-    }
-    if (p.hasJetpack) {
-      ctx.drawImage(jetpackImage, p.x + p.width / 2 - 25, p.y - 50, 50, 50);
-    }
-
+    if (p.hasSpring)  ctx.drawImage(springImage,  p.x + p.width/2 - 10, p.y - 15, 20, 20);
+    if (p.hasJetpack) ctx.drawImage(jetpackImage, p.x + p.width/2 - 25, p.y - 50, 50, 50);
   });
 }
 
-function updateAliens() {
-  if (score > ALIEN_SPAWN_SCORE && Math.random() < ALIEN_SPAWN_CHANCE) {
-    spawnAlien();
-  }
-
-  aliens.forEach((alien, idx) => {
-    alien.y += alien.dy;
-    if (alien.y > canvas.height + alien.height) aliens.splice(idx, 1);
-  });
-}
-
-function drawAliens() {
-  aliens.forEach(alien => {
-    ctx.drawImage(alienImage, alien.x, alien.y, alien.width, alien.height);
-  });
-}
-
-function updateProjectiles() {
-  projectiles.forEach((proj, idx) => {
-    proj.y += proj.dy;
-    if (proj.y + proj.height < 0) {
-      projectiles.splice(idx, 1);
-      return;
-    }
-
-    aliens.forEach((alien, alienIdx) => {
-      if (
-        proj.x < alien.x + alien.width &&
-        proj.x + proj.width > alien.x &&
-        proj.y < alien.y + alien.height &&
-        proj.y + proj.height > alien.y
-      ) {
-        aliens.splice(alienIdx, 1);
-        projectiles.splice(idx, 1);
-      }
-    });
-  });
-}
-
-function drawProjectiles() {
-  ctx.fillStyle = "red";
-  projectiles.forEach(proj => {
-    ctx.fillRect(proj.x, proj.y, proj.width, proj.height);
-  });
-}
-
+/* -------------------------------------------------------------
+ *  Core update loop
+ * ---------------------------------------------------------- */
 function update() {
+  // physics
   player.dy += player.gravity;
-  player.y += player.dy;
-  player.x += player.dx;
+  player.y  += player.dy;
+  player.x  += player.dx;
 
-  if (player.x < -player.width) player.x = canvas.width;
-  if (player.x > canvas.width) player.x = -player.width;
+  /* wrap horizontally */
+  if (player.x < -player.width)     player.x = canvas.width;
+  if (player.x > canvas.width)      player.x = -player.width;
 
+  /* jet‑pack thrust */
   if (player.jetpackActive) {
     player.dy = -6;
-    player.jetpackTimer--;
-    if (player.jetpackTimer <= 0) {
-      player.jetpackActive = false;
-    }
+    if (--player.jetpackTimer <= 0) player.jetpackActive = false;
   }
 
-  //platform collision check
-  platforms.forEach((p, index) => {
-    if (!player.jetpackActive && player.dy > 0 &&
-      player.y + player.height < p.y + p.height &&
-      player.y + player.height > p.y &&
-      player.x + player.width > p.x &&
-      player.x < p.x + p.width) {
+  /* platform collision */
+  platforms.forEach((p, idx) => {
+    if (!player.jetpackActive &&
+        player.dy > 0 &&
+        player.y + player.height < p.y + p.height &&
+        player.y + player.height > p.y &&
+        player.x + player.width  > p.x &&
+        player.x < p.x + p.width) {
 
-      if (p.hasJetpack) {
-        player.jetpackActive = true;
-        player.jetpackTimer = 300; // 5 seconds at 60fps
+      if (p.hasJetpack && player.jetpackFuel < player.maxJetpackFuel) {
+        player.jetpackFuel++;
         p.hasJetpack = false;
-      } else if (p.breakable) {
-        platforms.splice(index, 1);
+        updateFuelBar();
+      }
+
+      if (p.breakable) {
+        platforms.splice(idx, 1);      // disappear
       } else if (p.hasSpring) {
         player.dy = player.superJumpPower;
       } else {
         player.dy = player.jumpPower;
       }
-
     }
-
   });
 
+  /* camera follow (scroll world down) */
   if (player.y < canvas.height / 2) {
     const delta = canvas.height / 2 - player.y;
     gameHeight += delta;
-    player.y = canvas.height / 2;
+    player.y    = canvas.height / 2;
 
     platforms.forEach(p => {
       p.y += delta;
       if (p.y > canvas.height) {
-        const sizeFactor = Math.max(40, 80 - (gameHeight / 400));
-        const newWidth = sizeFactor + Math.random() * sizeFactor;
+        /* recycle platform at the top */
+        const sizeFactor   = Math.max(40, 80 - (gameHeight / 400));
+        const newWidth     = sizeFactor + Math.random() * sizeFactor;
+        const verticalGap  = Math.min(110, 30 + gameHeight / 150);
 
-        const verticalSpacing = Math.min(110, 30 + gameHeight / 150);
-        p.y = 0 - verticalSpacing;                
-
-        p.y = 0;
-        p.x = Math.random() * (canvas.width - newWidth);
+        p.y    = -verticalGap;
+        p.x    = Math.random() * (canvas.width - newWidth);
         p.width = newWidth;
 
         const currentScore = Math.floor(gameHeight / 10);
         const springChance = 0.2 * Math.pow(0.5, Math.floor(currentScore / 300));
         const allowBreakable =
-          (currentScore < 300 && !(breakableHistory.slice(-2).every(v => v))) ||
-          (currentScore >= 300 && !(breakableHistory.slice(-1).every(v => v)));
+          (currentScore < 300 && !breakableHistory.slice(-2).every(v => v)) ||
+          (currentScore >= 300 && !breakableHistory.slice(-1).every(v => v));
 
         const isBreakable = allowBreakable && Math.random() < 0.1;
-        const hasSpring = !isBreakable && Math.random() < springChance;
-        const hasJetpack = !isBreakable && !hasSpring && Math.random() <9;
+        const hasSpring   = !isBreakable && Math.random() < springChance;
+        const hasJetpack  = !isBreakable && !hasSpring && Math.random() < 0.05;
 
         breakableHistory.push(isBreakable);
         if (breakableHistory.length > 2) breakableHistory.shift();
 
         p.breakable = isBreakable;
         p.hasSpring = hasSpring;
+        p.hasJetpack = hasJetpack;
       }
-
     });
   }
 
+  /* score */
   score = Math.floor(gameHeight / 10);
-  document.getElementById("scoreDisplay").innerText = "Score: " + score;
+  document.getElementById("scoreDisplay").innerText = `Score: ${score}`;
 
+  /* fail condition */
   if (player.y > canvas.height) endGame();
 
+  /* enemies & bullets */
   updateAliens();
   updateProjectiles();
 
+  /* collision with alien (only if not protected) */
   if (!player.jetpackActive) {
     aliens.forEach(alien => {
-      if (
-        player.x < alien.x + alien.width &&
-        player.x + player.width > alien.x &&
-        player.y < alien.y + alien.height &&
-        player.y + player.height > alien.y
-      ) {
+      if (player.x < alien.x + alien.width &&
+          player.x + player.width > alien.x &&
+          player.y < alien.y + alien.height &&
+          player.y + player.height > alien.y) {
         endGame();
       }
     });
   }
 
+  /* keep fuel bar in sync each frame (handles jet‑pack burn‑out) */
+  updateFuelBar();
 }
 
+/* -------------------------------------------------------------
+ *  Rendering
+ * ---------------------------------------------------------- */
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawPlatforms();
@@ -354,40 +379,47 @@ function draw() {
   drawProjectiles();
 }
 
+/* -------------------------------------------------------------
+ *  Loop
+ * ---------------------------------------------------------- */
 function gameLoop() {
   update();
   draw();
   requestAnimationFrame(gameLoop);
 }
 
+/* -------------------------------------------------------------
+ *  Game over / restart
+ * ---------------------------------------------------------- */
 function endGame() {
   document.getElementById("finalScore").innerText = score;
   document.getElementById("gameOverScreen").style.display = "block";
 }
-
 function restartGame() {
-  player.x = 180;
-  player.y = 500;
-  player.dy = 0;
-  player.dx = 0;
-  player.facing = 'left';
-  score = 0;
+  /* reset player & world */
+  Object.assign(player, {
+    x: 180, y: 500, dx: 0, dy: 0,
+    jetpackFuel: 0, jetpackActive: false, jetpackTimer: 0,
+    facing: "left"
+  });
+  score      = 0;
   gameHeight = 0;
-  aliens = [];
-  projectiles = [];
+  aliens     = [];
+  projectiles= [];
+
   generatePlatforms();
   document.getElementById("gameOverScreen").style.display = "none";
+  updateFuelBar();
 }
 
+/* -------------------------------------------------------------
+ *  Controls
+ * ---------------------------------------------------------- */
 document.addEventListener("keydown", e => {
-  if (e.key === "ArrowLeft") {
-    player.dx = -4;
-    player.facing = 'left';
-  }
-  if (e.key === "ArrowRight") {
-    player.dx = 4;
-    player.facing = 'right';
-  }
+  if (e.key === "ArrowLeft")  { player.dx = -4; player.facing = "left"; }
+  if (e.key === "ArrowRight") { player.dx =  4; player.facing = "right"; }
+
+  /* shoot */
   if (e.key === "ArrowUp") {
     projectiles.push({
       x: player.x + player.width / 2 - 2,
@@ -397,17 +429,25 @@ document.addEventListener("keydown", e => {
       dy: -6
     });
   }
-});
 
-document.addEventListener("keyup", e => {
-  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-    player.dx = 0;
+  /* activate jet‑pack */
+  if (e.code === "Space" && player.jetpackFuel > 0 && !player.jetpackActive) {
+    player.jetpackActive = true;
+    player.jetpackTimer  = 300;     // 300 frames ≈ 5 s @60 fps
+    player.jetpackFuel--;
+    updateFuelBar();
   }
 });
-
+document.addEventListener("keyup", e => {
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight") player.dx = 0;
+});
 document.getElementById("restartButton").addEventListener("click", restartGame);
 
-// Start game
+/* -------------------------------------------------------------
+ *  Boot
+ * ---------------------------------------------------------- */
+generatePlatforms();
+updateFuelBar();
 gameLoop();
 </script>
 </body>
