@@ -172,7 +172,7 @@ function createPlatform(i,baseY){
   const size=Math.max(80-i*2,40),w=size+Math.random()*size,x=Math.random()*(canvas.width-w),y=baseY-i*40;
   const curScore=Math.floor(gameHeight/10),springChance=.2*Math.pow(.5,Math.floor(curScore/300));
   const allowBreak=(curScore<300&&!breakableHistory.slice(-2).every(v=>v))||(curScore>=300&&!breakableHistory.slice(-1).every(v=>v));
-  const isBreak=allowBreak&&Math.random()<.1,hasSpring=!isBreak&&Math.random()<springChance,hasJet=!isBreak&&!hasSpring&&Math.random()<.05;
+  const isBreak=allowBreak&&Math.random()<.1,hasSpring=!isBreak&&Math.random()<springChance,hasJet=!isBreak&&!hasSpring&&Math.random()<.01;
   breakableHistory.push(isBreak); if(breakableHistory.length>2)breakableHistory.shift();
   platforms.push({x,y,width:w,height:10,breakable:isBreak,hasSpring,hasJetpack:hasJet});
 }
