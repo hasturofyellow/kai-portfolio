@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Stick Soccer Showdown 2.1</title>
+<style>
+  /* –– RESET / BASE –– */
+  *{box-sizing:border-box}  body{margin:0;font:16px/1.4 sans-serif;background:#1d3557;color:#fff;user-select:none}
+  h1{font-size:2rem;margin:.5em 0}
+  button,select{font:inherit;padding:.55em 1em;border:none;border-radius:4px;cursor:pointer}
+  button{background:#e63946;color:#fff}  button:hover{filter:brightness(1.1)}
+  canvas{display:block;margin:0 auto;background:#a8dadc;border-top:5px solid #1d3557;image-rendering:pixelated}
+
+  /* –– SCREENS –– */
+  .screen{position:fixed;inset:0;display:flex;flex-direction:column;
+          align-items:center;justify-content:center;text-align:center;background:#000a;z-index:10}
+  #arena{background:none;display:none} /* main game ui */
+  #overlay{display:none}               /* goal / win overlay */
+
+  #scoreBar{background:#457b9d;font-size:2rem;padding:.3em;text-align:center}
+</style>
+</head>
+<body>
+
+<!-- 🏠 HOME -->
+<div id="menu" class="screen">
+  <div>
+    <h1>⚽ Stick Soccer Showdown</h1>
+    <p>Arrows/WASD move · Space/X kick · First to 3 wins</p>
+    <label>Difficulty 
+      <select id="difficulty">
+        <option value="0.05">Easy</option>
+        <option value="0.08" selected>Normal</option>
+        <option value="0.11">Hard</option>
+      </select>
+    </label><br>
+    <button id="btnStart">Start Match</button>
+  </div>
+</div>
+
+<!-- 🎮 ARENA -->
+<div id="arena">
+  <div id="scoreBar"><span id="pScore">0</span> – <span id="eScore">0</span></div>
+  <canvas id="field"></canvas>
+</div>
+
+<!-- 🏁 OVERLAY -->
+<div id="overlay" class="screen">
+  <div>
+    <h2 id="overlayText"></h2>
+    <button id="btnBack">Back to Menu</button>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   Stick Soccer Showdown 2.1 – No‑library ES2015+
+   ========================================================================= */
+(() => {
+  /* –– DOM refs –– */
+  const $ = id => document.getElementById(id);
+  const menu = $('menu'), arena = $('arena'), overlay = $('overlay');
+  const btnStart = $('btnStart'), btnBack = $('btnBack');
+  const pScoreEl = $('pScore'), eScoreEl = $('eScore'), diffSel = $('difficulty');
+  const cvs = $('field'), ctx = cvs.getContext('2d');
+
+  /* –– Canvas setup –– */
+  function resize(w=800,h=400){
+    const dpr=window.devicePixelRatio||1;
+    cvs.style.width=w+'px'; cvs.style.height=h+'px';
+    cvs.width=w*dpr; cvs.height=h*dpr; ctx.setTransform(1,0,0,1,0,0); ctx.scale(dpr,dpr);
+  } resize();
+
+  /* –– Constants –– */
+  const W=800,H=400, GROUND=H-40, GOAL_W=30, MAX=3, GRAV=0.35, KICK_CD=350;
+
+  /* –– State –– */
+  let keys=Object.create(null), p,e,b, pScore=0,eScore=0, lastKick=0, diff=0.08, running=false;
+
+  /* –– Classes –– */
+  class Actor{
+    constructor(x,y,r=20){this.x=x;this.y=y;this.vx=0;this.vy=0;this.r=r;this.jumps=2}
+    phys(){this.x+=this.vx;this.y+=this.vy;this.vy+=GRAV;
+      if(this.y>GROUND-this.r){this.y=GROUND-this.r;this.vy=0;this.jumps=2}
+      if(this.x<this.r)this.x=this.r; if(this.x>W-this.r)this.x=W-this.r;}
+    draw(c='#000'){ctx.strokeStyle=c;ctx.lineWidth=2;ctx.beginPath();
+      ctx.arc(this.x,this.y-20,10,0,Math.PI*2);
+      ctx.moveTo(this.x,this.y-10);ctx.lineTo(this.x,this.y+20);
+      ctx.moveTo(this.x,this.y);ctx.lineTo(this.x-10,this.y+20);
+      ctx.moveTo(this.x,this.y);ctx.lineTo(this.x+10,this.y+20);
+      ctx.moveTo(this.x,this.y-10);ctx.lineTo(this.x-10,this.y);
+      ctx.moveTo(this.x,this.y-10);ctx.lineTo(this.x+10,this.y); ctx.stroke();}
+  }
+  class Ball{
+    constructor(){this.reset()}
+    reset(dir=Math.random()<.5){this.x=W/2;this.y=GROUND-100;this.vx=dir?4:-4;this.vy=0;this.r=16}
+    phys(){
+      this.x += this.vx;
+      this.y += this.vy;
+      this.vy += GRAV * 0.85;
+
+      // Decay
+      this.vx *= 0.992;
+      this.vy *= 0.992;
+
+      // Clamp speed to max
+      const MAX_BALL_SPEED = 12;
+      const speed = Math.hypot(this.vx, this.vy);
+      if (speed > MAX_BALL_SPEED) {
+        const scale = MAX_BALL_SPEED / speed;
+        this.vx *= scale;
+        this.vy *= scale;
+      }
+
+      // Bounce on ground
+      if (this.y > GROUND - this.r) {
+        this.y = GROUND - this.r;
+        this.vy *= -0.7;
+      }
+
+      // Bounce on walls
+      if (this.x < this.r || this.x > W - this.r) {
+        this.vx *= -1;
+        this.x = this.x < this.r ? this.r : W - this.r;
+      }
+    }
+
+    draw(){ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#000';ctx.stroke();}
+  }
+
+  /* –– Input –– */
+  onkeydown=e=>keys[e.key.toLowerCase()]=true;
+  onkeyup=e=>keys[e.key.toLowerCase()]=false;
+
+  /* –– Helpers –– */
+  const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+  const collide=(a,b)=>dist(a,b)<a.r+b.r+2;
+  const clamp=(v,mn,mx)=>Math.min(Math.max(v,mn),mx);
+
+  /* –– Game flow –– */
+  btnStart.onclick=startGame; btnBack.onclick=backToMenu;
+
+  function startGame(){
+    diff=+diffSel.value;
+    menu.style.display='none';
+    overlay.style.display='none';
+    arena.style.display='block';
+    pScore=eScore=0; updateScore();
+    resetEntities(); running=true; requestAnimationFrame(loop);
+  }
+  function backToMenu(){
+    running=false;
+    arena.style.display='none';
+    overlay.style.display='none';
+    menu.style.display='flex';
+  }
+
+  function resetEntities(){p=new Actor(100,GROUND-20); e=new Actor(W-100,GROUND-20); b=new Ball()}
+
+  /* –– Main loop –– */
+  function loop(){
+    if(!running)return;
+    update(); draw(); requestAnimationFrame(loop);
+  }
+
+  /* –– Update –– */
+  function update(){
+    handlePlayer(); handleAI();
+    [p,e].forEach(o=>o.phys()); b.phys(); handleCollisions(); checkGoal();
+  }
+  function handlePlayer(){
+    p.vx=0;
+    if(keys['arrowleft']||keys['a']) p.vx=-5;
+    if(keys['arrowright']||keys['d']) p.vx=5;
+    if((keys['arrowup']||keys['w']||keys[' '])&&p.jumps){p.vy=-8;p.jumps--;keys['arrowup']=keys['w']=keys[' ']=false;}
+    if((keys['x']||keys['k'])&&Date.now()-lastKick>KICK_CD&&collide(p,b)){
+      lastKick=Date.now();const a=Math.atan2(b.y-p.y,b.x-p.x);
+      b.vx+=Math.cos(a)*6; b.vy+=Math.sin(a)*6;}
+  }
+  function handleAI(){
+    const tgt=b.x>W/2?b.x:W-100;
+    e.vx+= (tgt-e.x)*diff; e.vx=clamp(e.vx,-5.5,5.5);
+    if(b.y<e.y-60&&Math.abs(b.x-e.x)<80&&e.jumps){e.vy=-8;e.jumps--;}
+    if(collide(e,b)){const a=Math.atan2(b.y-e.y,b.x-e.x);b.vx+=Math.cos(a)*5;b.vy+=Math.sin(a)*5;}
+  }
+  function handleCollisions(){
+    [p,e].forEach(o=>{if(collide(o,b)){const a=Math.atan2(b.y-o.y,b.x-o.x);
+      b.vx+=Math.cos(a)*2.2; b.vy+=Math.sin(a)*2.2;}});
+  }
+  /* –– Scoring –– */
+  function checkGoal(){
+    if(b.y+b.r<GROUND-5)return;
+    if(b.x<GOAL_W){eScore++;goal(false)}
+    else if(b.x>W-GOAL_W){pScore++;goal(true)}
+  }
+  function goal(playerScored){
+    running=false; updateScore();
+    overlay.style.display='flex';
+    overlayText.textContent=playerScored?'GOOOAL 🎉':'Own Goal 😢';
+
+    if(pScore>=MAX||eScore>=MAX){
+      overlayText.textContent=(pScore>eScore?'YOU WIN 🏆':'DEFEAT 💀')+`  ${pScore}–${eScore}`;
+      return;
+    }
+    setTimeout(()=>{overlay.style.display='none';resetEntities();running=true;requestAnimationFrame(loop);},1000);
+  }
+  function updateScore(){pScoreEl.textContent=pScore; eScoreEl.textContent=eScore;}
+
+  /* –– Draw –– */
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#2a9d8f'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#264653'; ctx.fillRect(0,GROUND,W,H-GROUND);
+    ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(W/2,0);ctx.lineTo(W/2,GROUND);ctx.stroke();
+    ctx.fillStyle='#ffffff55';ctx.fillRect(0,GROUND-100,GOAL_W,100);ctx.fillRect(W-GOAL_W,GROUND-100,GOAL_W,100);
+    b.draw(); p.draw('#000'); e.draw('#772e25');
+  }
+})();
+</script>
+</body>
+</html>
+
+
+
