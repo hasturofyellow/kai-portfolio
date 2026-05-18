@@ -619,7 +619,7 @@ export class LobbyScene {
 
     buildCheckInNPC() {
         const loader = new FBXLoader();
-        loader.load('Old Man Idle.fbx', (fbx) => {
+        loader.load('../Animated Men Characters - Feb 2019/FBX/Smooth_Male_Casual.fbx', (fbx) => {
             fbx.scale.setScalar(0.025);
             fbx.position.set(-20, 0, -2); // left side of lobby, near the arcade corner
             fbx.rotation.y = -Math.PI / 2; // face +X toward lobby center
@@ -632,7 +632,7 @@ export class LobbyScene {
                 this.npcMixer = new THREE.AnimationMixer(fbx);
                 this.npcMixer.clipAction(fbx.animations[0]).play();
             }
-        }, undefined, (err) => console.warn('Old Man Idle.fbx failed to load:', err));
+        }, undefined, (err) => console.warn('Smooth_Male_Casual.fbx failed to load:', err));
 
         // Interaction trigger zone around the clerk near the arcade
         const trigger = new THREE.Mesh(new THREE.BoxGeometry(8, 6, 6));
@@ -646,7 +646,7 @@ export class LobbyScene {
     buildTicketCounterNPC() {
         // NPC behind the real ticket counter (the one at x=-20)
         const loader = new FBXLoader();
-        loader.load('Old Man Idle.fbx', (fbx) => {
+        loader.load('../Animated Men Characters - Feb 2019/FBX/Male_Suit.fbx', (fbx) => {
             fbx.scale.setScalar(0.025);
             fbx.position.set(-20, 0, 14.5); // standing on floor, behind counter (back face z=13.5)
             fbx.rotation.y = 0; // face -Z toward approaching player
@@ -659,7 +659,7 @@ export class LobbyScene {
                 this.ticketNpcMixer = new THREE.AnimationMixer(fbx);
                 this.ticketNpcMixer.clipAction(fbx.animations[0]).play();
             }
-        }, undefined, (err) => console.warn('Old Man Idle.fbx (ticket NPC) failed to load:', err));
+        }, undefined, (err) => console.warn('Male_Suit.fbx (ticket NPC) failed to load:', err));
     }
 
     buildLoungeArea() {
