@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { Collision } from '../collision.js';
 
 // Refined color palette - Deep blue as PRIMARY grounding color
@@ -23,6 +24,10 @@ export class LobbyScene {
         this.scene = scene;
         this.objects = [];
         this.lights = [];
+        this.sofaMixer = null;
+        this.npcMixer = null;
+        this.ticketNpcMixer = null;
+        this.checkInTrigger = null;
     }
 
     build() {
@@ -34,8 +39,10 @@ export class LobbyScene {
         this.buildColumns();
         this.buildFountain();
         this.buildChandelier();
-        this.buildConcessionStand();
         this.buildTicketCounter();
+        this.buildConcessionStand();
+        this.buildCheckInNPC();
+        this.buildTicketCounterNPC();
         this.buildLoungeArea();
         this.buildArcadeCorner();
         this.buildHallways();
@@ -358,55 +365,64 @@ export class LobbyScene {
 
         // Center pedestal
         const pedestal = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.5, 0.85, 3.5, 8),
+            new THREE.CylinderGeometry(0.5, 0.85
+                , 3.5, 8),
             baseMat
         );
         pedestal.position.set(0, 2.35, 0);
         this.scene.add(pedestal);
         this.objects.push(pedestal);
 
-        // Eye orb - canvas-textured eye that tracks the player
+        // Eye orb - tracks the player
         const eyeGroup = new THREE.Group();
-        eyeGroup.position.set(0, 5.2, 0);
+        eyeGroup.position.set(0, 4.5, 0);
 
-        // Sclera - off-white sphere (the white of the eye)
+        // Sclera (white of eye)
         const sclera = new THREE.Mesh(
-            new THREE.SphereGeometry(1.1, 32, 32),
+            new THREE.SphereGeometry(0.75, 32, 32),
             new THREE.MeshStandardMaterial({
-                color: 0xf0f4ff,
-                roughness: 0.25,
-                metalness: 0.0,
-                emissive: 0x080818,
-                emissiveIntensity: 0.2
+                color: 0xddeeff,
+                roughness: 0.15,
+                metalness: 0.05,
+                emissive: 0x112244,
+                emissiveIntensity: 0.3
             })
         );
         eyeGroup.add(sclera);
 
-        // Build eye canvas - iris + pupil + details all on one surface (no z-fighting)
-        const eyeCanvas = document.createElement('canvas');
-        eyeCanvas.width = 512;
-        eyeCanvas.height = 512;
-        this.eyeCanvas = eyeCanvas;
-        this.eyeCtx = eyeCanvas.getContext('2d');
-        this._drawEyeTexture(78);
-
-        const eyeTex = new THREE.CanvasTexture(eyeCanvas);
-        this.eyeTexture = eyeTex;
-
-        // Single disc flush with sclera surface - polygonOffset prevents z-fighting
-        const eyeFace = new THREE.Mesh(
-            new THREE.CircleGeometry(1.08, 64),
-            new THREE.MeshBasicMaterial({
-                map: eyeTex,
-                transparent: true,
-                depthWrite: false,
-                polygonOffset: true,
-                polygonOffsetFactor: -1,
-                polygonOffsetUnits: -1
-            })
+        // Iris - sits just on the surface of the sclera (z = radius)
+        const iris = new THREE.Mesh(
+            new THREE.CircleGeometry(0.34, 48),
+            new THREE.MeshBasicMaterial({ color: COLORS.pop, side: THREE.FrontSide })
         );
-        eyeFace.position.z = 1.09;
-        eyeGroup.add(eyeFace);
+        iris.position.z = 0.72;
+        eyeGroup.add(iris);
+        this.eyeIris = iris;
+
+        // Limbal ring - dark edge around iris
+        const limbal = new THREE.Mesh(
+            new THREE.RingGeometry(0.30, 0.36, 48),
+            new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.FrontSide })
+        );
+        limbal.position.z = 0.73;
+        eyeGroup.add(limbal);
+
+        // Pupil - sits in front of iris
+        const pupil = new THREE.Mesh(
+            new THREE.CircleGeometry(0.16, 32),
+            new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.FrontSide })
+        );
+        pupil.position.z = 0.74;
+        eyeGroup.add(pupil);
+        this.eyePupil = pupil;
+
+        // Specular highlight dot
+        const highlight = new THREE.Mesh(
+            new THREE.CircleGeometry(0.045, 16),
+            new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.FrontSide })
+        );
+        highlight.position.set(0.07, 0.07, 0.745);
+        eyeGroup.add(highlight);
 
         this.scene.add(eyeGroup);
         this.objects.push(eyeGroup);
@@ -414,7 +430,7 @@ export class LobbyScene {
 
         // Eye glow light
         const orbLight = new THREE.PointLight(COLORS.pop, 4, 12);
-        orbLight.position.set(0, 5.2, 0);
+        orbLight.position.set(0, 4.5, 0);
         this.scene.add(orbLight);
         this.lights.push(orbLight);
 
@@ -488,62 +504,6 @@ export class LobbyScene {
         }
     }
 
-    buildConcessionStand() {
-        // Counter - deep blue (primary)
-        const counterMat = new THREE.MeshStandardMaterial({
-            color: COLORS.primary,
-            roughness: 0.4,
-            metalness: 0.35
-        });
-
-        const counter = new THREE.Mesh(
-            new THREE.BoxGeometry(12, 4, 3),
-            counterMat
-        );
-        counter.position.set(-20, 2, 12);
-        this.scene.add(counter);
-        this.objects.push(counter);
-        Collision.addCollider(counter);
-
-        // Magenta LED edge (secondary)
-        const edge = new THREE.Mesh(
-            new THREE.BoxGeometry(12.2, 0.08, 0.08),
-            new THREE.MeshBasicMaterial({ color: COLORS.secondary })
-        );
-        edge.position.set(-20, 4, 10.5);
-        this.scene.add(edge);
-        this.objects.push(edge);
-
-        // Display case with cyan glow (tertiary - interactive)
-        const display = new THREE.Mesh(
-            new THREE.BoxGeometry(10, 2, 2),
-            new THREE.MeshStandardMaterial({
-                color: COLORS.tertiary,
-                emissive: COLORS.tertiary,
-                emissiveIntensity: 0.15,
-                transparent: true,
-                opacity: 0.35
-            })
-        );
-        display.position.set(-20, 5, 12);
-        this.scene.add(display);
-        this.objects.push(display);
-
-        // "SNACKS" sign - mint (pop - concessions highlight)
-        const sign = new THREE.Mesh(
-            new THREE.BoxGeometry(5, 0.8, 0.15),
-            new THREE.MeshBasicMaterial({ color: COLORS.pop })
-        );
-        sign.position.set(-20, 8, 13.5);
-        this.scene.add(sign);
-        this.objects.push(sign);
-
-        const signLight = new THREE.PointLight(COLORS.pop, 3, 10);
-        signLight.position.set(-20, 8, 12);
-        this.scene.add(signLight);
-        this.lights.push(signLight);
-    }
-
     buildTicketCounter() {
         // Counter - deep blue (primary)
         const counterMat = new THREE.MeshStandardMaterial({
@@ -553,20 +513,20 @@ export class LobbyScene {
         });
 
         const counter = new THREE.Mesh(
-            new THREE.BoxGeometry(10, 4, 3),
+            new THREE.BoxGeometry(12, 2.5, 3),
             counterMat
         );
-        counter.position.set(20, 2, 12);
+        counter.position.set(-20, 1.25, 12);
         this.scene.add(counter);
         this.objects.push(counter);
         Collision.addCollider(counter);
 
-        // Magenta LED edge (secondary)
+        // Magenta LED edge (secondary) - sits on counter top
         const edge = new THREE.Mesh(
-            new THREE.BoxGeometry(10.2, 0.08, 0.08),
+            new THREE.BoxGeometry(12.2, 0.08, 0.08),
             new THREE.MeshBasicMaterial({ color: COLORS.secondary })
         );
-        edge.position.set(20, 4, 10.5);
+        edge.position.set(-20, 2.5, 10.5);
         this.scene.add(edge);
         this.objects.push(edge);
 
@@ -582,7 +542,7 @@ export class LobbyScene {
             new THREE.PlaneGeometry(3, 3),
             windowMat
         );
-        ticketWindow.position.set(20, 5.5, 10.4);
+        ticketWindow.position.set(-20, 5.5, 10.4);
         this.scene.add(ticketWindow);
         this.objects.push(ticketWindow);
 
@@ -591,20 +551,122 @@ export class LobbyScene {
             new THREE.BoxGeometry(4.5, 0.8, 0.15),
             new THREE.MeshBasicMaterial({ color: COLORS.secondary })
         );
-        sign.position.set(20, 8, 13.5);
+        sign.position.set(-20, 8, 13.5);
         this.scene.add(sign);
         this.objects.push(sign);
 
         const signLight = new THREE.PointLight(COLORS.secondary, 3, 10);
+        signLight.position.set(-20, 8, 12);
+        this.scene.add(signLight);
+        this.lights.push(signLight);
+    }
+
+    buildConcessionStand() {
+        // Counter - deep blue (primary)
+        const counterMat = new THREE.MeshStandardMaterial({
+            color: COLORS.primary,
+            roughness: 0.4,
+            metalness: 0.35
+        });
+
+        const counter = new THREE.Mesh(
+            new THREE.BoxGeometry(10, 2.5, 3),
+            counterMat
+        );
+        counter.position.set(20, 1.25, 12);
+        this.scene.add(counter);
+        this.objects.push(counter);
+        Collision.addCollider(counter);
+
+        // Magenta LED edge (secondary) - sits on counter top
+        const edge = new THREE.Mesh(
+            new THREE.BoxGeometry(10.2, 0.08, 0.08),
+            new THREE.MeshBasicMaterial({ color: COLORS.secondary })
+        );
+        edge.position.set(20, 2.5, 10.5);
+        this.scene.add(edge);
+        this.objects.push(edge);
+
+        // Display case with cyan glow (tertiary - interactive) - sits on lowered counter top (y=2.5)
+        const display = new THREE.Mesh(
+            new THREE.BoxGeometry(10, 2, 2),
+            new THREE.MeshStandardMaterial({
+                color: COLORS.tertiary,
+                emissive: COLORS.tertiary,
+                emissiveIntensity: 0.15,
+                transparent: true,
+                opacity: 0.35
+            })
+        );
+        display.position.set(20, 3.5, 12);
+        this.scene.add(display);
+        this.objects.push(display);
+
+        // "SNACKS" sign - mint (pop - concessions highlight)
+        const sign = new THREE.Mesh(
+            new THREE.BoxGeometry(5, 0.8, 0.15),
+            new THREE.MeshBasicMaterial({ color: COLORS.pop })
+        );
+        sign.position.set(20, 8, 13.5);
+        this.scene.add(sign);
+        this.objects.push(sign);
+
+        const signLight = new THREE.PointLight(COLORS.pop, 3, 10);
         signLight.position.set(20, 8, 12);
         this.scene.add(signLight);
         this.lights.push(signLight);
+    }
+
+    buildCheckInNPC() {
+        const loader = new FBXLoader();
+        loader.load('Old Man Idle.fbx', (fbx) => {
+            fbx.scale.setScalar(0.025);
+            fbx.position.set(-20, 0, -2); // left side of lobby, near the arcade corner
+            fbx.rotation.y = -Math.PI / 2; // face +X toward lobby center
+            fbx.traverse(child => {
+                if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
+            });
+            this.scene.add(fbx);
+            this.objects.push(fbx);
+            if (fbx.animations?.length > 0) {
+                this.npcMixer = new THREE.AnimationMixer(fbx);
+                this.npcMixer.clipAction(fbx.animations[0]).play();
+            }
+        }, undefined, (err) => console.warn('Old Man Idle.fbx failed to load:', err));
+
+        // Interaction trigger zone around the clerk near the arcade
+        const trigger = new THREE.Mesh(new THREE.BoxGeometry(8, 6, 6));
+        trigger.visible = false;
+        trigger.position.set(-20, 3, -2);
+        this.scene.add(trigger);
+        this.objects.push(trigger);
+        this.checkInTrigger = trigger;
+    }
+
+    buildTicketCounterNPC() {
+        // NPC behind the real ticket counter (the one at x=-20)
+        const loader = new FBXLoader();
+        loader.load('Old Man Idle.fbx', (fbx) => {
+            fbx.scale.setScalar(0.025);
+            fbx.position.set(-20, 0, 14.5); // standing on floor, behind counter (back face z=13.5)
+            fbx.rotation.y = 0; // face -Z toward approaching player
+            fbx.traverse(child => {
+                if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
+            });
+            this.scene.add(fbx);
+            this.objects.push(fbx);
+            if (fbx.animations?.length > 0) {
+                this.ticketNpcMixer = new THREE.AnimationMixer(fbx);
+                this.ticketNpcMixer.clipAction(fbx.animations[0]).play();
+            }
+        }, undefined, (err) => console.warn('Old Man Idle.fbx (ticket NPC) failed to load:', err));
     }
 
     buildLoungeArea() {
         // Seating with magenta accents
         this.buildSofa(13, -5, Math.PI / 2);
         this.buildSofa(22, -5, -Math.PI / 2);
+        this.buildSofaNPC();
 
         // Coffee table with cyan glow (tertiary)
         const table = new THREE.Mesh(
@@ -625,6 +687,27 @@ export class LobbyScene {
         tableLight.position.set(18, 1.2, -5);
         this.scene.add(tableLight);
         this.lights.push(tableLight);
+    }
+
+    buildSofaNPC() {
+        const loader = new FBXLoader();
+        loader.load('Sitting Laughing.fbx', (fbx) => {
+            fbx.scale.setScalar(0.025); // Match world scale (proportional to player/counter)
+            fbx.position.set(13, 1.1, -5); // butt on seat top (seat top at y=1.1)
+            fbx.rotation.y = Math.PI / 2; // face away from sofa back (+X direction)
+            fbx.traverse(child => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+            this.scene.add(fbx);
+            this.objects.push(fbx);
+            if (fbx.animations?.length > 0) {
+                this.sofaMixer = new THREE.AnimationMixer(fbx);
+                this.sofaMixer.clipAction(fbx.animations[0]).play();
+            }
+        });
     }
 
     buildSofa(x, z, rotation) {
@@ -787,6 +870,31 @@ export class LobbyScene {
         this.scene.add(sign);
         this.objects.push(sign);
 
+        // Text label placard facing lobby interior
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        const hexColor = '#' + color.toString(16).padStart(6, '0');
+        ctx.fillStyle = hexColor;
+        ctx.fillRect(0, 0, 512, 128);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 56px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(name, 256, 64);
+        const placardTexture = new THREE.CanvasTexture(canvas);
+        const placardPlane = new THREE.Mesh(
+            new THREE.PlaneGeometry(5, 0.8),
+            new THREE.MeshBasicMaterial({ map: placardTexture, transparent: false })
+        );
+        // Face inward toward the lobby (rotate 90° around Y for left wall, -90° for right wall)
+        placardPlane.rotation.y = x < 0 ? Math.PI / 2 : -Math.PI / 2;
+        const placardX = x < 0 ? wallFace + 0.1 : wallFace - 0.1;
+        placardPlane.position.set(placardX, 9.5, z);
+        this.scene.add(placardPlane);
+        this.objects.push(placardPlane);
+
         // Hallway light - positioned inside lobby, away from wall
         const lightX = x < 0 ? x + 4 : x - 4;
         const light = new THREE.PointLight(color, 3, 10);
@@ -841,6 +949,28 @@ export class LobbyScene {
         sign.position.set(0, 12, -24);
         this.scene.add(sign);
         this.objects.push(sign);
+
+        // Text label on the main theater sign facing the lobby (+z direction)
+        const mainCanvas = document.createElement('canvas');
+        mainCanvas.width = 512;
+        mainCanvas.height = 128;
+        const mainCtx = mainCanvas.getContext('2d');
+        mainCtx.fillStyle = '#' + COLORS.secondary.toString(16).padStart(6, '0');
+        mainCtx.fillRect(0, 0, 512, 128);
+        mainCtx.fillStyle = '#ffffff';
+        mainCtx.font = 'bold 56px Arial, sans-serif';
+        mainCtx.textAlign = 'center';
+        mainCtx.textBaseline = 'middle';
+        mainCtx.fillText('MAIN THEATER', 256, 64);
+        const mainTexture = new THREE.CanvasTexture(mainCanvas);
+        const mainPlacard = new THREE.Mesh(
+            new THREE.PlaneGeometry(9, 1.2),
+            new THREE.MeshBasicMaterial({ map: mainTexture })
+        );
+        // Faces +z toward the lobby
+        mainPlacard.position.set(0, 12, -23.93);
+        this.scene.add(mainPlacard);
+        this.objects.push(mainPlacard);
 
         const signLight = new THREE.PointLight(COLORS.secondary, 4, 12);
         signLight.position.set(0, 11, -22);
@@ -958,63 +1088,73 @@ export class LobbyScene {
         Collision.addTrigger(triggerBox, callback, 'theater-1-entrance');
     }
 
-    getSpawnPoint() {
-        return { x: 0, y: 1, z: 20 };
+    setupTheater2Trigger(callback) {
+        const triggerBox = new THREE.Mesh(new THREE.BoxGeometry(6, 8, 4));
+        triggerBox.position.set(27, 4, 15);
+        triggerBox.visible = false;
+        Collision.addTrigger(triggerBox, callback, 'theater-2-entrance');
     }
 
-    _drawEyeTexture(pupilR) {
-        const ctx = this.eyeCtx;
-        const cx = 256, cy = 256;
-        ctx.clearRect(0, 0, 512, 512);
+    setupTheater3Trigger(callback) {
+        const triggerBox = new THREE.Mesh(new THREE.BoxGeometry(6, 8, 4));
+        triggerBox.position.set(-27, 4, -15);
+        triggerBox.visible = false;
+        Collision.addTrigger(triggerBox, callback, 'theater-3-entrance');
+    }
 
-        // Iris - radial gradient, bright cyan centre fading to dark teal edge
-        const irisGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 212);
-        irisGrad.addColorStop(0,    '#00f2ff');
-        irisGrad.addColorStop(0.45, '#00b8cc');
-        irisGrad.addColorStop(1,    '#004455');
-        ctx.beginPath();
-        ctx.arc(cx, cy, 212, 0, Math.PI * 2);
-        ctx.fillStyle = irisGrad;
-        ctx.fill();
+    setupTheater4Trigger(callback) {
+        const triggerBox = new THREE.Mesh(new THREE.BoxGeometry(6, 8, 4));
+        triggerBox.position.set(27, 4, -15);
+        triggerBox.visible = false;
+        Collision.addTrigger(triggerBox, callback, 'theater-4-entrance');
+    }
 
-        // Radial fiber lines (gives iris that spoke texture)
-        for (let i = 0; i < 48; i++) {
-            const a = (i / 48) * Math.PI * 2;
-            ctx.strokeStyle = `rgba(0,20,30,0.18)`;
-            ctx.lineWidth = 1.2;
-            ctx.beginPath();
-            ctx.moveTo(cx + Math.cos(a) * (pupilR + 6), cy + Math.sin(a) * (pupilR + 6));
-            ctx.lineTo(cx + Math.cos(a) * 208, cy + Math.sin(a) * 208);
-            ctx.stroke();
+    setupCheckInTrigger(callback) {
+        if (this.checkInTrigger) {
+            Collision.addTrigger(this.checkInTrigger, callback, 'checkin-npc');
         }
+    }
 
-        // Limbal ring - dark edge where iris meets sclera
-        ctx.beginPath();
-        ctx.arc(cx, cy, 210, 0, Math.PI * 2);
-        ctx.strokeStyle = '#001418';
-        ctx.lineWidth = 18;
-        ctx.stroke();
+    setupSeatTriggers(onEnterSeat, onExitSeat) {
+        const sofaPositions = [
+            { x: 13, z: -5 },
+            { x: 22, z: -5 }
+        ];
+        sofaPositions.forEach((seat, i) => {
+            const trigger = new THREE.Mesh(new THREE.BoxGeometry(4, 2.5, 2.4));
+            trigger.visible = false;
+            trigger.position.set(seat.x, 1.2, seat.z);
+            this.scene.add(trigger);
+            this.objects.push(trigger);
+            Collision.addTrigger(trigger, (event) => {
+                if (event === 'enter') onEnterSeat(seat);
+                else onExitSeat(seat);
+            }, `lobby-seat-${i}`);
+        });
+    }
 
-        // Pupil - solid near-black
-        ctx.beginPath();
-        ctx.arc(cx, cy, pupilR, 0, Math.PI * 2);
-        ctx.fillStyle = '#060606';
-        ctx.fill();
+    setupArcadeTriggers(callback) {
+        const cabinets = [
+            { x: -22, z: -8, id: 'arcade-1' },
+            { x: -18, z: -6, id: 'arcade-2' },
+            { x: -24, z: -4, id: 'arcade-3' },
+        ];
+        cabinets.forEach((c, i) => {
+            const trigger = new THREE.Mesh(new THREE.BoxGeometry(4, 6, 4));
+            trigger.visible = false;
+            trigger.position.set(c.x, 3, c.z);
+            this.scene.add(trigger);
+            this.objects.push(trigger);
+            Collision.addTrigger(trigger, (event) => callback(event, i + 1), c.id);
+        });
+    }
 
-        // Main specular highlight (top-left)
-        const hlGrad = ctx.createRadialGradient(cx + 55, cy - 58, 0, cx + 55, cy - 58, 30);
-        hlGrad.addColorStop(0, 'rgba(255,255,255,0.9)');
-        hlGrad.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.beginPath();
-        ctx.arc(cx + 55, cy - 58, 30, 0, Math.PI * 2);
-        ctx.fillStyle = hlGrad;
-        ctx.fill();
+    setupMoneyPickups(collectedIds, onCollect) {
+        // No money pickups in the lobby
+    }
 
-        // Small secondary highlight
-        ctx.beginPath();
-        ctx.arc(cx + 72, cy - 38, 11, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255,255,255,0.35)';
-        ctx.fill();
+    getSpawnPoint() {
+        return { x: 0, y: 1, z: 20 };
     }
 
     update(dt, playerPos) {
@@ -1025,25 +1165,25 @@ export class LobbyScene {
 
         // Eye tracks the player
         if (this.eyeGroup && playerPos) {
+            // Look at player's chest height so the eye doesn't stare at the floor
             const target = new THREE.Vector3(playerPos.x, playerPos.y + 1.2, playerPos.z);
             this.eyeGroup.lookAt(target);
         }
 
-        // Pupil dilation - redraw canvas texture at slow breathing speed
-        if (this.eyeTexture) {
-            const t = performance.now() * 0.001;
-            const pupilR = Math.round(68 + Math.sin(t * 0.7) * 18); // 50–86 px range
-            if (pupilR !== this._lastPupilR) {
-                this._lastPupilR = pupilR;
-                this._drawEyeTexture(pupilR);
-                this.eyeTexture.needsUpdate = true;
-            }
+        // Pupil dilation pulse (subtle breathing effect)
+        if (this.eyePupil) {
+            const t = performance.now() * 0.0015;
+            const dilation = 0.88 + Math.sin(t) * 0.12;
+            this.eyePupil.scale.setScalar(dilation);
         }
 
         // Rotate chandelier rings slowly
         if (this.chandelierRing1) this.chandelierRing1.rotation.z += dt * 0.15;
         if (this.chandelierRing2) this.chandelierRing2.rotation.z -= dt * 0.1;
         if (this.chandelierRing3) this.chandelierRing3.rotation.z += dt * 0.08;
+        if (this.sofaMixer) this.sofaMixer.update(dt);
+        if (this.npcMixer) this.npcMixer.update(dt);
+        if (this.ticketNpcMixer) this.ticketNpcMixer.update(dt);
     }
 
     dispose() {
@@ -1060,6 +1200,11 @@ export class LobbyScene {
         });
 
         this.lights.forEach(light => this.scene.remove(light));
+
+        if (this.sofaMixer) {
+            this.sofaMixer.stopAllAction();
+            this.sofaMixer = null;
+        }
 
         this.objects = [];
         this.lights = [];

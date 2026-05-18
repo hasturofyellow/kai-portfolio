@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { Collision } from '../collision.js';
 
 // Refined color palette - Deep blue as PRIMARY grounding color
@@ -23,7 +24,10 @@ export class ExteriorScene {
         this.objects = [];
         this.lights = [];
         this.marqueeLights = [];
+        this.moneyStacks = [];
         this.time = 0;
+        this.npcMixer = null;
+        this.ticketTrigger = null;
     }
 
     build() {
@@ -36,7 +40,39 @@ export class ExteriorScene {
         this.createStreetLamps();
         this.createEntranceDoors();
         this.createNeonDecorations();
+        this.createDumpster();
+        // Bill #1: tucked between dumpster and building wall
+        this.createMoneyStack('ext-dumpster', -14, -7);
+        // Bill #2: pressed against the facade between leftmost column and building edge
+        this.createMoneyStack('ext-corner', -17.5, -8);
         this.setupLighting();
+        this.buildTicketNPC();
+    }
+
+    buildTicketNPC() {
+        const loader = new FBXLoader();
+        loader.load('Old Man Idle.fbx', (fbx) => {
+            fbx.scale.setScalar(0.018); // Mixamo exports in cm
+            fbx.position.set(12, 0, -2.2); // inside booth, behind window
+            fbx.rotation.y = Math.PI; // face toward player (+Z)
+            fbx.traverse(child => {
+                if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
+            });
+            this.scene.add(fbx);
+            this.objects.push(fbx);
+            if (fbx.animations?.length > 0) {
+                this.npcMixer = new THREE.AnimationMixer(fbx);
+                this.npcMixer.clipAction(fbx.animations[0]).play();
+            }
+        }, undefined, (err) => console.warn('Old Man Idle.fbx failed to load:', err));
+
+        // Interaction trigger in front of the booth window
+        const trigger = new THREE.Mesh(new THREE.BoxGeometry(3, 4, 3));
+        trigger.visible = false;
+        trigger.position.set(12, 2, 0.8);
+        this.scene.add(trigger);
+        this.objects.push(trigger);
+        this.ticketTrigger = trigger;
     }
 
     createSky() {
@@ -145,8 +181,8 @@ export class ExteriorScene {
     }
 
     createSidewalk() {
-        // Dark sidewalk
-        const walkGeo = new THREE.PlaneGeometry(100, 15);
+        // Dark sidewalk — extended to z=-9 so it meets the building facade
+        const walkGeo = new THREE.PlaneGeometry(100, 16.5);
         const walkMat = new THREE.MeshStandardMaterial({
             color: 0x1e1c2e,
             roughness: 0.75,
@@ -154,10 +190,27 @@ export class ExteriorScene {
         });
         const sidewalk = new THREE.Mesh(walkGeo, walkMat);
         sidewalk.rotation.x = -Math.PI / 2;
-        sidewalk.position.set(0, 0, 0);
+        sidewalk.position.set(0, 0, -0.75);
         sidewalk.receiveShadow = true;
         this.scene.add(sidewalk);
         this.objects.push(sidewalk);
+
+        // Invisible ground colliders so the player can fall off the edges
+        // Sidewalk slab (z: -9 to 7.5) — covers up to the building facade front
+        const sidewalkCollider = new THREE.Mesh(new THREE.BoxGeometry(100, 0.2, 16.5));
+        sidewalkCollider.position.set(0, -0.1, -0.75);
+        sidewalkCollider.visible = false;
+        this.scene.add(sidewalkCollider);
+        this.objects.push(sidewalkCollider);
+        Collision.addCollider(sidewalkCollider);
+
+        // Street slab (z: 5 to 45)
+        const streetCollider = new THREE.Mesh(new THREE.BoxGeometry(100, 0.2, 40));
+        streetCollider.position.set(0, -0.2, 25);
+        streetCollider.visible = false;
+        this.scene.add(streetCollider);
+        this.objects.push(streetCollider);
+        Collision.addCollider(streetCollider);
 
         // Curb strip - cyan (tertiary - floor lighting)
         const curbGeo = new THREE.BoxGeometry(100, 0.25, 0.4);
@@ -333,18 +386,37 @@ export class ExteriorScene {
     }
 
     createTicketBooth() {
-        // Booth body - deep blue (primary - architecture)
-        const boothGeo = new THREE.BoxGeometry(4, 5, 3);
         const boothMat = new THREE.MeshStandardMaterial({
             color: COLORS.primary,
             roughness: 0.45
         });
-        const booth = new THREE.Mesh(boothGeo, boothMat);
-        booth.position.set(12, 2.5, -2);
-        booth.castShadow = true;
-        this.scene.add(booth);
-        this.objects.push(booth);
-        Collision.addCollider(booth);
+
+        // Booth walls — 8 panels leaving a 2.5 × 2.8 open gap in the front face
+        // Booth bounds: X 10→14, Y 0→5, Z −3.5→−0.5. Opening: X 10.75→13.25, Y 1.0→3.8
+        const panels = [
+            { geo: [4,    5,   0.2], pos: [12,      2.5,  -3.4] },  // back wall
+            { geo: [0.2,  5,   3  ], pos: [10.1,    2.5,  -2  ] },  // left wall
+            { geo: [0.2,  5,   3  ], pos: [13.9,    2.5,  -2  ] },  // right wall
+            { geo: [3.6,  0.2, 2.8], pos: [12,      4.9,  -1.9] },  // ceiling
+            { geo: [0.75, 5,   0.2], pos: [10.375,  2.5,  -0.5] },  // front left pillar
+            { geo: [0.75, 5,   0.2], pos: [13.625,  2.5,  -0.5] },  // front right pillar
+            { geo: [2.5,  1.0, 0.2], pos: [12,      0.5,  -0.5] },  // front bottom sill
+            { geo: [2.5,  1.2, 0.2], pos: [12,      4.4,  -0.5] },  // front top header
+        ];
+        panels.forEach(({ geo, pos }) => {
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(...geo), boothMat);
+            mesh.position.set(...pos);
+            mesh.castShadow = true;
+            this.scene.add(mesh);
+            this.objects.push(mesh);
+            Collision.addCollider(mesh);
+        });
+
+        // Counter shelf at the base of the opening
+        const counter = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.15, 0.6), boothMat);
+        counter.position.set(12, 1.0, -0.2);
+        this.scene.add(counter);
+        this.objects.push(counter);
 
         // Neon frame - magenta (secondary - ticket kiosk highlight)
         const framePositions = [
@@ -362,20 +434,6 @@ export class ExteriorScene {
             this.objects.push(frame);
         });
 
-        // Window with cyan glow (tertiary - interactive screen)
-        const windowGeo = new THREE.PlaneGeometry(2, 2);
-        const windowMat = new THREE.MeshStandardMaterial({
-            color: COLORS.tertiary,
-            emissive: COLORS.tertiary,
-            emissiveIntensity: 0.25,
-            transparent: true,
-            opacity: 0.5
-        });
-        const windowMesh = new THREE.Mesh(windowGeo, windowMat);
-        windowMesh.position.set(12, 3, -0.45);
-        this.scene.add(windowMesh);
-        this.objects.push(windowMesh);
-
         // "TICKETS" sign - magenta (secondary - signage)
         const signCanvas = this.createTextCanvas("TICKETS", 128, 32, COLORS.secondary, 20);
         const signTex = new THREE.CanvasTexture(signCanvas);
@@ -386,9 +444,9 @@ export class ExteriorScene {
         this.scene.add(sign);
         this.objects.push(sign);
 
-        // Booth light - magenta wash
-        const boothLight = new THREE.PointLight(COLORS.secondary, 4, 12);
-        boothLight.position.set(12, 4, 0);
+        // Booth interior light — warm white so NPC is clearly visible
+        const boothLight = new THREE.PointLight(0xfff5e0, 6, 8);
+        boothLight.position.set(12, 3.5, -1.5);
         this.scene.add(boothLight);
         this.lights.push(boothLight);
     }
@@ -527,7 +585,205 @@ export class ExteriorScene {
         this.scene.add(arrow);
         this.objects.push(arrow);
     }
+    createMoneyStack(id, x, z) {
+        const group = new THREE.Group();
 
+        const canvas = document.createElement('canvas');
+        canvas.width = 128; canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#2d8a3e';
+        ctx.fillRect(0, 0, 128, 64);
+        ctx.strokeStyle = '#1a5c28';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(5, 5, 118, 54);
+        ctx.fillStyle = '#c8ffc8';
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('$5', 64, 32);
+        const tex = new THREE.CanvasTexture(canvas);
+
+        const topMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.05 });
+        const sideMat = new THREE.MeshStandardMaterial({
+            color: 0x2d8a3e, roughness: 0.6, metalness: 0.05,
+            emissive: 0x0a3010, emissiveIntensity: 0.15
+        });
+        const billMats = [sideMat, sideMat, topMat, sideMat, sideMat, sideMat];
+
+        const count = 6;
+        for (let i = 0; i < count; i++) {
+            const bill = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.028, 0.44), billMats);
+            bill.position.y = i * 0.028 + 0.014;
+            bill.rotation.y = (i - count / 2) * 0.08 + (Math.random() - 0.5) * 0.05;
+            group.add(bill);
+        }
+
+        group.position.set(x, 0, z);
+        this.scene.add(group);
+        this.objects.push(group);
+
+        const glow = new THREE.PointLight(0x44ff88, 1.2, 5);
+        glow.position.set(x, 0.6, z);
+        this.scene.add(glow);
+        this.lights.push(glow);
+
+        const triggerMesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
+        triggerMesh.visible = false;
+        triggerMesh.position.set(x, 0.5, z);
+        this.scene.add(triggerMesh);
+        this.objects.push(triggerMesh);
+
+        this.moneyStacks.push({ id, group, glow, triggerMesh });
+    }
+
+    setupMoneyPickups(collectedIds, onCollect) {
+        for (const stack of this.moneyStacks) {
+            if (collectedIds.has(stack.id)) {
+                this.scene.remove(stack.group);
+                this.scene.remove(stack.glow);
+                this.scene.remove(stack.triggerMesh);
+            } else {
+                Collision.addTrigger(stack.triggerMesh, (event) => {
+                    if (event === 'enter') {
+                        this.scene.remove(stack.group);
+                        this.scene.remove(stack.glow);
+                        this.scene.remove(stack.triggerMesh);
+                        Collision.removeTrigger(stack.id);
+                        onCollect(stack.id);
+                    }
+                }, stack.id);
+            }
+        }
+    }
+
+    createDumpster() {
+        const W = 3.8, H = 2.5, D = 2.4, wheelR = 0.38;
+        const bodyBottomY = wheelR + 0.12;
+        const bodyCenterY = bodyBottomY + H / 2;
+        const bodyTopY    = bodyBottomY + H;
+        const lip = 0.13;
+
+        const bodyMat  = new THREE.MeshStandardMaterial({ color: 0x2aa84a, roughness: 0.5, metalness: 0.5 });
+        const lidMat   = new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.65, metalness: 0.3 });
+        const ribMat   = new THREE.MeshStandardMaterial({ color: 0x0e0e0e, roughness: 0.9 });
+        const darkMat  = new THREE.MeshStandardMaterial({ color: 0x080808, roughness: 1.0 });
+        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x0e0e0e, roughness: 0.9 });
+        const hubMat   = new THREE.MeshStandardMaterial({ color: 0x282828, roughness: 0.5, metalness: 0.7 });
+
+        const group = new THREE.Group();
+
+        // ── Main body ──────────────────────────────────────────────────
+        const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), bodyMat);
+        body.position.y = bodyCenterY;
+        body.castShadow = true;
+        group.add(body);
+
+        // ── Two horizontal reinforcement rails on front face ───────────
+        [0.55, 1.05].forEach(y => {
+            const rail = new THREE.Mesh(new THREE.BoxGeometry(W + 0.12, 0.13, 0.09), bodyMat);
+            rail.position.set(0, y, D / 2 + 0.04);
+            group.add(rail);
+        });
+
+        // ── Top lip/rim ────────────────────────────────────────────────
+        [
+            { g: [W + 0.18, lip, lip], p: [0,       bodyTopY,  D / 2] },
+            { g: [W + 0.18, lip, lip], p: [0,       bodyTopY, -D / 2] },
+            { g: [lip, lip, D],        p: [ W / 2,  bodyTopY,  0    ] },
+            { g: [lip, lip, D],        p: [-W / 2,  bodyTopY,  0    ] },
+        ].forEach(({ g, p }) => {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(...g), bodyMat);
+            m.position.set(...p);
+            group.add(m);
+        });
+
+        // ── Fork pocket brackets (sides, mid-height) ───────────────────
+        [-W / 2, W / 2].forEach(x => {
+            const s = Math.sign(x);
+            // Outer bracket arm
+            const arm = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.52, 1.3), bodyMat);
+            arm.position.set(x + s * 0.14, 1.3, 0);
+            group.add(arm);
+            // Dark pocket opening face
+            const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.26, 1.05), darkMat);
+            pocket.position.set(x + s * 0.23, 1.3, 0);
+            group.add(pocket);
+        });
+
+        // ── Two-panel lid, hinged at back top edge ─────────────────────
+        this.dumpsterLidHinge = new THREE.Group();
+        const lidHinge = this.dumpsterLidHinge;
+        lidHinge.position.set(0, bodyTopY + lip, -D / 2);
+
+        const panelW = W / 2 - 0.06;
+        const panelD = D - 0.04;
+
+        [-1, 1].forEach(side => {
+            const cx = side * (panelW / 2 + 0.03);
+
+            const panel = new THREE.Mesh(new THREE.BoxGeometry(panelW, 0.13, panelD), lidMat);
+            panel.position.set(cx, 0, panelD / 2);
+            lidHinge.add(panel);
+
+            // Ribs running front-to-back on each half
+            for (let i = -2; i <= 2; i++) {
+                const rib = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, panelD - 0.1), ribMat);
+                rib.position.set(cx + i * (panelW / 5), 0.1, panelD / 2);
+                lidHinge.add(rib);
+            }
+        });
+
+        // Center split gap
+        const gap = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.15, panelD), darkMat);
+        gap.position.set(0, 0, panelD / 2);
+        lidHinge.add(gap);
+
+        // Swing open ~100°
+        lidHinge.rotation.x = -Math.PI * 0.56;
+        this.dumpsterLidRestX = -Math.PI * 0.56;
+        group.add(lidHinge);
+
+        // ── Four large caster wheels ───────────────────────────────────
+        const wheelGeo = new THREE.CylinderGeometry(wheelR, wheelR, 0.22, 20);
+        const hubGeo   = new THREE.CylinderGeometry(0.13, 0.13, 0.26, 12);
+
+        [
+            [-W / 2 + 0.35,  D / 2 - 0.38],
+            [ W / 2 - 0.35,  D / 2 - 0.38],
+            [-W / 2 + 0.35, -D / 2 + 0.38],
+            [ W / 2 - 0.35, -D / 2 + 0.38],
+        ].forEach(([xw, zw]) => {
+            const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+            wheel.rotation.z = Math.PI / 2;
+            wheel.position.set(xw, wheelR, zw);
+            group.add(wheel);
+
+            const hub = new THREE.Mesh(hubGeo, hubMat);
+            hub.rotation.z = Math.PI / 2;
+            hub.position.set(xw, wheelR, zw);
+            group.add(hub);
+        });
+
+        group.position.set(-14, 0, -4);
+        this.scene.add(group);
+        this.objects.push(group);
+
+        // Invisible collision box
+        const collider = new THREE.Mesh(new THREE.BoxGeometry(W + 0.56, H + 0.2, D + 0.3));
+        collider.position.set(-14, bodyCenterY, -4);
+        collider.visible = false;
+        this.scene.add(collider);
+        this.objects.push(collider);
+        Collision.addCollider(collider);
+
+        // Interaction trigger (larger than collider so player can get close)
+        const triggerMesh = new THREE.Mesh(new THREE.BoxGeometry(W + 2.5, H + 1, D + 2.5));
+        triggerMesh.position.set(-14, bodyCenterY, -4);
+        triggerMesh.visible = false;
+        this.scene.add(triggerMesh);
+        this.objects.push(triggerMesh);
+        this.dumpsterTrigger = triggerMesh;
+    }
     setupLighting() {
         // Strong white ambient - same fix as lobby/theater, ensures surfaces are visible
         const ambient = new THREE.AmbientLight(0xffffff, 2.0);
@@ -600,8 +856,21 @@ export class ExteriorScene {
         }
     }
 
+    setupDumpsterTrigger(callback) {
+        if (this.dumpsterTrigger) {
+            Collision.addTrigger(this.dumpsterTrigger, callback, 'dumpster');
+        }
+    }
+
+    setupTicketTrigger(callback) {
+        if (this.ticketTrigger) {
+            Collision.addTrigger(this.ticketTrigger, callback, 'ticket-npc');
+        }
+    }
+
     update(dt) {
         this.time += dt;
+        if (this.npcMixer) this.npcMixer.update(dt);
 
         // Subtle marquee light chase animation
         for (let i = 0; i < this.marqueeLights.length; i++) {
@@ -620,6 +889,8 @@ export class ExteriorScene {
     }
 
     dispose() {
+        if (this.npcMixer) { this.npcMixer.stopAllAction(); this.npcMixer = null; }
+
         for (const obj of this.objects) {
             this.scene.remove(obj);
             if (obj.geometry) obj.geometry.dispose();

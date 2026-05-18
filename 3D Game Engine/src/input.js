@@ -4,6 +4,7 @@ export class Input {
     static keysJustPressed = {};
     static mouse = { x: 0, y: 0, dx: 0, dy: 0, locked: false };
     static mouseButtons = { left: false, right: false, middle: false };
+    static scroll = { delta: 0 };
 
     static init(canvas) {
         // Keyboard events
@@ -50,6 +51,11 @@ export class Input {
             Input.mouse.locked = document.pointerLockElement === canvas;
         });
 
+        // Scroll wheel for camera zoom
+        window.addEventListener('wheel', (e) => {
+            Input.scroll.delta += e.deltaY;
+        }, { passive: true });
+
         // Prevent context menu on right-click
         canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     }
@@ -58,6 +64,7 @@ export class Input {
         Input.keysJustPressed = {};
         Input.mouse.dx = 0;
         Input.mouse.dy = 0;
+        Input.scroll.delta = 0;
     }
 
     static isKeyDown(code) {

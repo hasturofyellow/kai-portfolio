@@ -12,8 +12,8 @@ export class Player {
 
         // Physics
         this.velocity = new THREE.Vector3();
-        this.speed = 8;
-        this.runSpeed = 14;
+        this.speed = 6;
+        this.runSpeed = 11;
         this.jumpForce = 12;
         this.doubleJumpForce = 10;
         this.gravity = -30;
@@ -23,6 +23,7 @@ export class Player {
         this.isGrounded = true;
         this.jumpsUsed = 0;
         this.maxJumps = 2;
+        this.floorY = 0; // Can be overridden per-location
 
         // Coyote time & jump buffer
         this.coyoteTime = 0.12;
@@ -180,7 +181,7 @@ export class Player {
 
         // Ground collision
         const groundY = Collision.checkGround(this.mesh.position, this.radius, this.mesh.position.y);
-        const floorY = 0; // Default floor
+        const floorY = this.floorY;
 
         const effectiveGround = groundY !== null ? Math.max(groundY, floorY) : floorY;
 

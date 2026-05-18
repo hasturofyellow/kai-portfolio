@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0d0d0d">
+  <link rel="manifest" href="manifest.json">
+  <title>NULL</title>
+  <style>
+    *, *::before, *::after {
+      margin: 0; padding: 0; box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    :root {
+      --bg: #0d0d0d;
+      --surface: #161616;
+      --border: #252525;
+      --text: #d0d0d0;
+      --muted: #444;
+      --muted2: #333;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    /* ── Screens ── */
+    .screen {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 40px;
+      transition: opacity 0.35s ease, transform 0.35s ease;
+    }
+    .screen.hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: scale(0.97);
+    }
+
+    /* ── Permission screen ── */
+    #permission-screen { gap: 28px; text-align: center; padding: 48px; }
+
+    .perm-label {
+      font-size: 11px;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+      color: var(--muted);
+      line-height: 2.2;
+    }
+
+    .perm-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 14px 36px;
+      font-size: 11px;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .perm-btn:active { background: var(--surface); border-color: #444; }
+
+    /* ── Home screen ── */
+    .game-title {
+      font-size: 10px;
+      letter-spacing: 10px;
+      text-transform: uppercase;
+      color: var(--muted);
+      user-select: none;
+    }
+
+    .puzzle-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 130px);
+      gap: 14px;
+    }
+
+    .puzzle-node {
+      width: 130px;
+      height: 130px;
+      border-radius: 22px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.15s ease, border-color 0.4s;
+      user-select: none;
+    }
+    .puzzle-node:active { transform: scale(0.94); }
+    .puzzle-node.solved { cursor: default; }
+    .puzzle-node.solved:active { transform: none; }
+
+    .node-glow {
+      position: absolute;
+      inset: 0;
+      border-radius: 22px;
+      opacity: 0;
+      transition: opacity 0.6s ease;
+    }
+    .puzzle-node.solved .node-glow { opacity: 0.12; }
+
+    .node-symbol {
+      font-size: 34px;
+      position: relative;
+      z-index: 1;
+      filter: grayscale(1) brightness(0.35);
+      transition: filter 0.5s ease, color 0.5s ease;
+    }
+    .puzzle-node.solved .node-symbol { filter: none; }
+
+    .solve-count {
+      font-size: 10px;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+      color: var(--muted);
+      user-select: none;
+    }
+
+    /* ── Puzzle screen ── */
+    #puzzle-screen { gap: 36px; }
+
+    .back-btn {
+      position: absolute;
+      top: env(safe-area-inset-top, 48px);
+      left: 24px;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      cursor: pointer;
+      padding: 8px 4px;
+    }
+    .back-btn:active { color: var(--text); }
+
+    .sensor-ring {
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      transition: border-color 0.4s ease, box-shadow 0.4s ease;
+    }
+    .sensor-ring.active {
+      border-color: rgba(255, 255, 255, 0.25);
+      box-shadow: 0 0 30px rgba(255, 255, 255, 0.04);
+    }
+    .sensor-ring.solved-ring {
+      box-shadow: 0 0 40px rgba(255, 255, 255, 0.08);
+    }
+
+    .puzzle-symbol-large {
+      font-size: 64px;
+      transition: transform 0.3s ease;
+      user-select: none;
+    }
+    .sensor-ring.active .puzzle-symbol-large {
+      transform: scale(1.08);
+    }
+
+    .puzzle-hint-text {
+      font-size: 11px;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+      color: var(--muted);
+      user-select: none;
+    }
+
+    .progress-track {
+      width: 180px;
+      height: 1px;
+      background: var(--muted2);
+      position: relative;
+      border-radius: 1px;
+    }
+    .progress-fill {
+      position: absolute;
+      left: 0; top: 0;
+      height: 100%;
+      width: 0%;
+      border-radius: 1px;
+      transition: width 0.15s ease;
+    }
+
+    .solved-label {
+      font-size: 10px;
+      letter-spacing: 7px;
+      text-transform: uppercase;
+      color: var(--muted);
+      opacity: 0;
+      transition: opacity 0.6s ease;
+      user-select: none;
+    }
+    .solved-label.visible { opacity: 1; }
+
+    /* ── No-sensors fallback ── */
+    #no-sensor-screen { gap: 16px; text-align: center; padding: 48px; }
+    .no-sensor-text {
+      font-size: 11px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--muted);
+      line-height: 2.4;
+    }
+
+    /* ── Flash overlay ── */
+    #flash {
+      position: fixed; inset: 0;
+      background: white;
+      opacity: 0;
+      pointer-events: none;
+    }
+    @keyframes doFlash {
+      0%   { opacity: 0; }
+      20%  { opacity: 0.07; }
+      100% { opacity: 0; }
+    }
+    #flash.flashing { animation: doFlash 0.7s ease forwards; }
+  </style>
+</head>
+<body>
+
+<!-- Permission (iOS) -->
+<div class="screen" id="permission-screen">
+  <p class="perm-label">this game uses<br>your device's sensors</p>
+  <button class="perm-btn" id="perm-btn">allow access</button>
+</div>
+
+<!-- No sensors fallback -->
+<div class="screen hidden" id="no-sensor-screen">
+  <p class="no-sensor-text">open on a<br>mobile device<br>to play</p>
+</div>
+
+<!-- Home -->
+<div class="screen hidden" id="home-screen">
+  <p class="game-title">NULL</p>
+  <div class="puzzle-grid" id="puzzle-grid"></div>
+  <p class="solve-count" id="solve-count">0 / 4</p>
+</div>
+
+<!-- Active puzzle -->
+<div class="screen hidden" id="puzzle-screen">
+  <button class="back-btn" id="back-btn">← back</button>
+  <div class="sensor-ring" id="sensor-ring">
+    <span class="puzzle-symbol-large" id="puzzle-symbol"></span>
+  </div>
+  <p class="puzzle-hint-text" id="puzzle-hint"></p>
+  <div class="progress-track">
+    <div class="progress-fill" id="progress-fill"></div>
+  </div>
+  <p class="solved-label" id="solved-label">solved</p>
+</div>
+
+<div id="flash"></div>
+
+<script>
+// ── Puzzle definitions ──────────────────────────────────────────────────────
+
+const PUZZLES = [
+  {
+    id: 'still',
+    symbol: '◉',
+    hint: 'be still',
+    color: '#5bc8f5',
+    holdMs: 5000,
+  },
+  {
+    id: 'shake',
+    symbol: '⊗',
+    hint: 'disturb the calm',
+    color: '#f06262',
+    shakeTarget: 3,
+  },
+  {
+    id: 'landscape',
+    symbol: '◈',
+    hint: 'see sideways',
+    color: '#6dbe8a',
+    holdMs: 1200,
+  },
+  {
+    id: 'facedown',
+    symbol: '◎',
+    hint: 'look away',
+    color: '#b57bee',
+    holdMs: 2000,
+  },
+];
+
+// ── State ───────────────────────────────────────────────────────────────────
+
+let solved = new Set(JSON.parse(localStorage.getItem('null-v1-solved') || '[]'));
+let activePuzzle = null;
+let activeListeners = [];  // { type, fn, target? }
+let activeIntervals = [];
+
+// ── DOM refs ────────────────────────────────────────────────────────────────
+
+const screens = {
+  permission: document.getElementById('permission-screen'),
+  noSensor:   document.getElementById('no-sensor-screen'),
+  home:       document.getElementById('home-screen'),
+  puzzle:     document.getElementById('puzzle-screen'),
+};
+const puzzleGrid   = document.getElementById('puzzle-grid');
+const solveCount   = document.getElementById('solve-count');
+const sensorRing   = document.getElementById('sensor-ring');
+const puzzleSymbol = document.getElementById('puzzle-symbol');
+const puzzleHint   = document.getElementById('puzzle-hint');
+const progressFill = document.getElementById('progress-fill');
+const solvedLabel  = document.getElementById('solved-label');
+const flash        = document.getElementById('flash');
+
+// ── Screen helpers ──────────────────────────────────────────────────────────
+
+function showScreen(name) {
+  Object.entries(screens).forEach(([k, el]) => {
+    el.classList.toggle('hidden', k !== name);
+  });
+}
+
+// ── Init ────────────────────────────────────────────────────────────────────
+
+async function init() {
+  // Check if sensors exist at all
+  if (!window.DeviceMotionEvent && !window.DeviceOrientationEvent) {
+    showScreen('noSensor');
+    return;
+  }
+
+  // iOS requires explicit permission
+  if (typeof DeviceMotionEvent?.requestPermission === 'function') {
+    showScreen('permission');
+    document.getElementById('perm-btn').addEventListener('click', async () => {
+      try {
+        const [m, o] = await Promise.all([
+          DeviceMotionEvent.requestPermission(),
+          DeviceOrientationEvent.requestPermission(),
+        ]);
+        if (m === 'granted' && o === 'granted') {
+          showHome();
+        }
+      } catch (e) {
+        // user denied — stay on permission screen
+      }
+    });
+  } else {
+    showHome();
+  }
+}
+
+// ── Home screen ─────────────────────────────────────────────────────────────
+
+function showHome() {
+  stopSensors();
+  activePuzzle = null;
+  renderGrid();
+  showScreen('home');
+}
+
+function renderGrid() {
+  puzzleGrid.innerHTML = '';
+  PUZZLES.forEach(p => {
+    const isSolved = solved.has(p.id);
+    const node = document.createElement('div');
+    node.className = 'puzzle-node' + (isSolved ? ' solved' : '');
+
+    const glow = document.createElement('div');
+    glow.className = 'node-glow';
+    glow.style.background = p.color;
+
+    const sym = document.createElement('span');
+    sym.className = 'node-symbol';
+    sym.textContent = p.symbol;
+    if (isSolved) sym.style.color = p.color;
+
+    node.appendChild(glow);
+    node.appendChild(sym);
+
+    if (!isSolved) {
+      node.addEventListener('click', () => openPuzzle(p));
+    }
+    puzzleGrid.appendChild(node);
+  });
+
+  solveCount.textContent = `${solved.size} / ${PUZZLES.length}`;
+}
+
+// ── Puzzle screen ────────────────────────────────────────────────────────────
+
+function openPuzzle(puzzle) {
+  activePuzzle = puzzle;
+
+  puzzleSymbol.textContent = puzzle.symbol;
+  puzzleSymbol.style.color = puzzle.color;
+  puzzleHint.textContent = puzzle.hint;
+  progressFill.style.width = '0%';
+  progressFill.style.background = puzzle.color;
+  solvedLabel.classList.remove('visible');
+  sensorRing.className = 'sensor-ring';
+  sensorRing.style.borderColor = '';
+
+  showScreen('puzzle');
+  startPuzzle(puzzle);
+}
+
+document.getElementById('back-btn').addEventListener('click', showHome);
+
+function setProgress(ratio) {
+  progressFill.style.width = Math.min(ratio * 100, 100) + '%';
+}
+
+function setRingActive(on) {
+  sensorRing.classList.toggle('active', on);
+}
+
+// ── Sensor management ────────────────────────────────────────────────────────
+
+function on(type, fn, target = window) {
+  target.addEventListener(type, fn);
+  activeListeners.push({ type, fn, target });
+}
+
+function every(ms, fn) {
+  const id = setInterval(fn, ms);
+  activeIntervals.push(id);
+  return id;
+}
+
+function stopSensors() {
+  activeListeners.forEach(({ type, fn, target }) => target.removeEventListener(type, fn));
+  activeListeners = [];
+  activeIntervals.forEach(clearInterval);
+  activeIntervals = [];
+}
+
+// ── Puzzle logic ─────────────────────────────────────────────────────────────
+
+function startPuzzle(puzzle) {
+  stopSensors();
+  switch (puzzle.id) {
+    case 'still':     startStill(puzzle);     break;
+    case 'shake':     startShake(puzzle);     break;
+    case 'landscape': startLandscape(puzzle); break;
+    case 'facedown':  startFacedown(puzzle);  break;
+  }
+}
+
+// STILL — no significant movement for holdMs
+function startStill(puzzle) {
+  let prevMag = null;
+  let stillSince = null;
+
+  every(80, () => {
+    if (!activePuzzle) return;
+    if (stillSince !== null) {
+      const elapsed = Date.now() - stillSince;
+      const ratio = elapsed / puzzle.holdMs;
+      setProgress(ratio);
+      setRingActive(true);
+      if (ratio >= 1) solvePuzzle(puzzle);
+    } else {
+      setProgress(0);
+      setRingActive(false);
+    }
+  });
+
+  on('devicemotion', (e) => {
+    if (!activePuzzle) return;
+    const a = e.acceleration;
+    // Fall back to gravity-subtracted delta if acceleration not available
+    const mag = a
+      ? Math.sqrt((a.x||0)**2 + (a.y||0)**2 + (a.z||0)**2)
+      : null;
+
+    if (mag === null) {
+      // Use accelerationIncludingGravity delta approach
+      const g = e.accelerationIncludingGravity;
+      if (!g) return;
+      const gMag = Math.sqrt((g.x||0)**2 + (g.y||0)**2 + (g.z||0)**2);
+      if (prevMag === null) { prevMag = gMag; return; }
+      const delta = Math.abs(gMag - prevMag);
+      prevMag = gMag;
+      if (delta > 0.4) { stillSince = null; }
+      else if (stillSince === null) { stillSince = Date.now(); }
+    } else {
+      if (mag > 0.4) { stillSince = null; }
+      else if (stillSince === null) { stillSince = Date.now(); }
+    }
+  });
+}
+
+// SHAKE — detect 3 distinct shakes
+function startShake(puzzle) {
+  let count = 0;
+  let cooldown = false;
+
+  on('devicemotion', (e) => {
+    if (!activePuzzle || cooldown) return;
+    const a = e.acceleration || e.accelerationIncludingGravity;
+    if (!a) return;
+    const mag = Math.sqrt((a.x||0)**2 + (a.y||0)**2 + (a.z||0)**2);
+
+    if (mag > 18) {
+      cooldown = true;
+      count++;
+      setProgress(count / puzzle.shakeTarget);
+      setRingActive(true);
+
+      if (count >= puzzle.shakeTarget) {
+        solvePuzzle(puzzle);
+        return;
+      }
+
+      setTimeout(() => {
+        cooldown = false;
+        setRingActive(false);
+      }, 500);
+    }
+  });
+}
+
+// LANDSCAPE — rotate and hold
+function startLandscape(puzzle) {
+  let holdSince = null;
+
+  const check = () => {
+    if (!activePuzzle) return;
+    const isLandscape = window.innerWidth > window.innerHeight;
+
+    if (isLandscape && holdSince === null) {
+      holdSince = Date.now();
+      setRingActive(true);
+    } else if (!isLandscape) {
+      holdSince = null;
+      setProgress(0);
+      setRingActive(false);
+    }
+
+    if (holdSince !== null) {
+      const ratio = (Date.now() - holdSince) / puzzle.holdMs;
+      setProgress(ratio);
+      if (ratio >= 1) solvePuzzle(puzzle);
+    }
+  };
+
+  every(100, check);
+  on('resize', check);
+  check();
+}
+
+// FACEDOWN — z-axis gravity ~+9.8 means screen facing down
+function startFacedown(puzzle) {
+  let holdSince = null;
+
+  on('devicemotion', (e) => {
+    if (!activePuzzle) return;
+    const g = e.accelerationIncludingGravity;
+    if (!g) return;
+
+    // z > 7 = phone face down (gravity pulling toward screen = screen facing down)
+    const isFaceDown = (g.z || 0) > 7;
+
+    if (isFaceDown && holdSince === null) {
+      holdSince = Date.now();
+      setRingActive(true);
+    } else if (!isFaceDown) {
+      holdSince = null;
+      setProgress(0);
+      setRingActive(false);
+    }
+
+    if (holdSince !== null) {
+      const ratio = (Date.now() - holdSince) / puzzle.holdMs;
+      setProgress(ratio);
+      if (ratio >= 1) solvePuzzle(puzzle);
+    }
+  });
+}
+
+// ── Solve ────────────────────────────────────────────────────────────────────
+
+function solvePuzzle(puzzle) {
+  if (solved.has(puzzle.id)) return;
+  stopSensors();
+
+  solved.add(puzzle.id);
+  localStorage.setItem('null-v1-solved', JSON.stringify([...solved]));
+
+  setProgress(1);
+  setRingActive(false);
+  sensorRing.classList.add('solved-ring');
+  sensorRing.style.borderColor = puzzle.color;
+  solvedLabel.classList.add('visible');
+
+  flash.classList.add('flashing');
+  flash.addEventListener('animationend', () => flash.classList.remove('flashing'), { once: true });
+
+  setTimeout(showHome, 2200);
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+
+init();
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

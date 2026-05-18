@@ -1,49 +1,76 @@
-# CLAUDE.md
+# Kai's Game Portfolio
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Game portfolio website showcasing interactive browser games. Each game is a self-contained HTML file with embedded CSS and JavaScript — no build process required.
 
-## Project Overview
+## Directory Structure
 
-Game portfolio website showcasing interactive browser games. Each game is a self-contained HTML file with embedded CSS and JavaScript - no build process required.
+```
+kai-portfolio/
+├── index.html          — Portfolio hub (game directory, search, categories)
+├── server.js           — Node.js WebSocket server for multiplayer Snake
+├── snakeGame.html      — Multiplayer snake game
+├── colorWars.html      — Chain Reaction (2–8 player turn-based)
+├── cookieClicker.html  — Cosmic Cookie Clicker (idle game)
+├── legoTest.html       — Lego-style 3D theater portfolio
+├── doodleJump.html     — Vertical platformer
+├── ageOfWar.html       — Tower-defense strategy
+├── blastblock.html     — Block-clearing puzzle
+├── idle.html           — Cheeseburger Empire (incremental)
+├── sharkNado.html      — Choose-your-own-adventure
+├── stick/              — Stick Soccer
+├── 3D Game Engine/     — Three.js cinema portfolio (own CLAUDE.md)
+├── God game/           — 3D Babylon.js game
+├── sensor-puzzle/      — Mobile PWA sensor puzzle (own CLAUDE.md)
+└── docs/               — Extended documentation (imported below)
+```
 
-## Running the Project
+## Running
 
-**Portfolio site:** Serve `index.html` via any HTTP server (e.g., `python -m http.server` or VS Code Live Server)
+**Portfolio site:**
+```bash
+python -m http.server
+# open http://localhost:8000
+```
 
-**Multiplayer Snake:** Requires the WebSocket server
+**Multiplayer Snake** (WebSocket server required):
 ```bash
 node server.js
+# server runs on ws://localhost:8080
 ```
-Server runs on `ws://localhost:8080` with 60 Hz tick rate and 20 Hz snapshot broadcasts.
 
-## Architecture
+**3D Cinema** — must be served via HTTP (ES modules); open `3D Game Engine/index.html`.
 
-### Game Structure
-- **index.html** - Portfolio hub with game directory, search, and category filtering
-- **server.js** - Node.js WebSocket server for multiplayer Snake game
-- **Individual games** - Self-contained HTML files in root (snakeGame.html, doodleJump.html, etc.)
-- **Game Engine/** - Modular game framework (work in progress)
-- **God game/** - 3D Babylon.js game
-- **stick/** - Stick Soccer game
+**Sensor Puzzle** — requires HTTPS on a real mobile device, or DevTools sensor simulation.
 
-### Technologies
-- Vanilla JavaScript (ES6+) with Canvas 2D for most games
-- Babylon.js for 3D rendering (God Game)
-- WebSocket (`ws` package) for multiplayer
-- Tailwind CSS in some games (Cookie Clicker)
+## Technologies
 
-### Common Patterns
-- Canvas rendering with `requestAnimationFrame` game loops
-- Object-oriented entities (Actor, Ball, Snake classes)
-- Separate update/render phases in game loops
-- Browser cookies for persistence (high scores, achievements)
-- Modal overlays for menus and settings
-- AI behaviors with personality templates (Snake game)
+| Tech | Used in |
+|---|---|
+| Vanilla JS + Canvas 2D | Most games |
+| Three.js 0.160.0 | 3D Game Engine / cinema |
+| Babylon.js | God game |
+| WebSocket (`ws` package) | Multiplayer Snake server |
+| Tailwind CSS (CDN) | Cookie Clicker |
+| Service Worker / PWA | sensor-puzzle |
 
-### Snake Server Architecture
-The multiplayer snake server uses:
-- Fixed tick system (60 Hz physics)
-- Snapshot broadcasts (20 Hz state sync)
-- Path compression for network efficiency
-- Safe spawn point calculation with collision checking
-- Configurable AI personalities (fearful, balanced, aggressive)
+## Documentation
+
+@docs/portfolio-hub.md
+
+@docs/server.md
+
+@docs/games/snake.md
+
+@docs/games/3d-cinema.md
+
+@docs/games/simple-games.md
+
+@docs/games/newer-games.md
+
+## Behavioral Guidelines
+
+@docs/behavior.md
+
+## Agent Guidance
+
+@.claude/agents.md

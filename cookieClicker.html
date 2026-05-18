@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmic Cookie Clicker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@300;400;600&display=swap');
+
+        body {
+            font-family: 'Fredoka', sans-serif;
+            background-color: #1a1c23;
+            color: #e2e8f0;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* The Big Cookie Animation */
+        .big-cookie {
+            transition: transform 0.1s;
+            cursor: pointer;
+            filter: drop-shadow(0 0 15px rgba(217, 119, 6, 0.5));
+        }
+        
+        .big-cookie:active {
+            transform: scale(0.95);
+        }
+
+        .big-cookie:hover {
+            transform: scale(1.05);
+            filter: drop-shadow(0 0 25px rgba(217, 119, 6, 0.8));
+        }
+
+        /* Floating Text Animation */
+        .floating-text {
+            position: absolute;
+            font-weight: bold;
+            color: white;
+            pointer-events: none;
+            animation: floatUp 1s ease-out forwards;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            z-index: 50;
+        }
+
+        @keyframes floatUp {
+            0% { transform: translateY(0) scale(1); opacity: 1; }
+            100% { transform: translateY(-100px) scale(1.2); opacity: 0; }
+        }
+
+        /* Rotating background rays */
+        .bg-rays {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 200vw;
+            height: 200vw;
+            background: repeating-conic-gradient(
+                from 0deg,
+                rgba(255, 255, 255, 0.03) 0deg 10deg,
+                transparent 10deg 20deg
+            );
+            transform: translate(-50%, -50%);
+            animation: rotateRays 60s linear infinite;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        @keyframes rotateRays {
+            from { transform: translate(-50%, -50%) rotate(0deg); }
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #2d3748; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4a5568; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #718096; 
+        }
+
+        /* Pulse Animation for Unlockables */
+        .pulse-highlight {
+            animation: pulse-border 2s infinite;
+        }
+
+        @keyframes pulse-border {
+            0% { box-shadow: 0 0 0 0 rgba(66, 153, 225, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(66, 153, 225, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(66, 153, 225, 0); }
+        }
+
+        /* CRT Scanline effect overlay */
+        .scanlines {
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.1) 50%,
+                rgba(0,0,0,0.1)
+            );
+            background-size: 100% 4px;
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .gold-text { color: #FBBF24; text-shadow: 0 0 5px #F59E0B; }
+        .locked-item { filter: grayscale(1) opacity(0.5); pointer-events: none; }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col md:flex-row relative">
+
+    <!-- Background Animation -->
+    <div class="bg-rays"></div>
+    <div class="scanlines"></div>
+
+    <!-- Notification Area -->
+    <div id="toast-container" class="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 w-full max-w-md px-4 pointer-events-none"></div>
+
+    <!-- LEFT PANEL: The Cookie & Stats -->
+    <div class="relative z-20 w-full md:w-1/3 flex flex-col items-center justify-center p-6 border-b md:border-b-0 md:border-r border-gray-700 bg-gray-900 bg-opacity-90 shadow-2xl">
+        
+        <div class="text-center mb-8">
+            <h2 class="text-gray-400 text-sm uppercase tracking-widest mb-1">Bakery Name</h2>
+            <div id="bakery-name" class="text-xl text-blue-300 cursor-pointer hover:text-white transition">Cosmic Bakery <i class="fas fa-pen text-xs ml-1 opacity-50"></i></div>
+        </div>
+
+        <div class="text-center mb-10">
+            <div id="cookie-count" class="text-5xl font-bold text-white mb-2">0</div>
+            <div class="text-gray-400 text-lg">cookies</div>
+            <div class="text-sm text-green-400 mt-2 font-mono bg-gray-800 px-3 py-1 rounded-full inline-block border border-gray-700">
+                <i class="fas fa-bolt mr-1"></i> <span id="cps-display">0.0</span> per second
+            </div>
+        </div>
+
+        <!-- THE COOKIE -->
+        <div class="relative group">
+            <div class="absolute inset-0 bg-yellow-600 rounded-full blur-xl opacity-20 group-hover:opacity-40 transition duration-500"></div>
+            <img src="https://cdn-icons-png.flaticon.com/512/1047/1047711.png" 
+                 alt="Cookie" 
+                 id="big-cookie" 
+                 class="big-cookie w-64 h-64 relative z-10 rounded-full object-cover">
+        </div>
+
+        <!-- Utility Buttons -->
+        <div class="mt-12 flex gap-4">
+            <button onclick="Game.save()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-bold text-white transition shadow-lg"><i class="fas fa-save mr-1"></i> Save</button>
+            <button onclick="Game.reset()" class="px-4 py-2 bg-red-900 hover:bg-red-700 rounded text-sm font-bold text-white transition shadow-lg"><i class="fas fa-trash mr-1"></i> Wipe</button>
+        </div>
+    </div>
+
+    <!-- CENTER PANEL: Upgrades & Info -->
+    <div class="relative z-20 w-full md:w-1/3 flex flex-col bg-gray-800 bg-opacity-95 border-b md:border-b-0 md:border-r border-gray-700">
+        <div class="p-4 bg-gray-900 border-b border-gray-700 shadow-md">
+            <h2 class="text-xl font-bold text-yellow-500"><i class="fas fa-arrow-up mr-2"></i>Upgrades</h2>
+        </div>
+        
+        <div id="upgrades-container" class="flex-1 overflow-y-auto p-4 flex flex-wrap content-start gap-2">
+            <!-- Upgrades injected here -->
+            <div class="text-gray-500 text-center w-full mt-10 italic">Play to unlock upgrades...</div>
+        </div>
+
+        <!-- News Ticker -->
+        <div class="h-12 bg-black border-t border-gray-700 flex items-center overflow-hidden relative">
+            <div id="news-ticker" class="whitespace-nowrap absolute text-gray-400 font-mono text-sm px-4">
+                Welcome to the cosmic bakery. The universe is waiting for your cookies.
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT PANEL: Store -->
+    <div class="relative z-20 w-full md:w-1/3 flex flex-col bg-gray-900 bg-opacity-95">
+        <div class="p-4 bg-gray-900 border-b border-gray-700 shadow-md flex justify-between items-center">
+            <h2 class="text-xl font-bold text-blue-400"><i class="fas fa-store mr-2"></i>Store</h2>
+            <span class="text-xs text-gray-500">Buy x1</span>
+        </div>
+
+        <div id="store-container" class="flex-1 overflow-y-auto p-2 space-y-2">
+            <!-- Buildings injected here -->
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        /* --- GAME CONFIGURATION --- */
+        const BUILDINGS = [
+            { id: 'cursor', name: 'Cursor', icon: 'fa-hand-pointer', cost: 15, cps: 0.1, desc: 'Autoclicks once every 10 seconds.' },
+            { id: 'grandma', name: 'Grandma', icon: 'fa-user-nurse', cost: 100, cps: 1, desc: 'A nice grandma to bake more cookies.' },
+            { id: 'farm', name: 'Cookie Farm', icon: 'fa-tractor', cost: 1100, cps: 8, desc: 'Growing cookies from cookie seeds.' },
+            { id: 'mine', name: 'Cookie Mine', icon: 'fa-hammer', cost: 12000, cps: 47, desc: 'Mining cookie dough from the earth.' },
+            { id: 'factory', name: 'Factory', icon: 'fa-industry', cost: 130000, cps: 260, desc: 'Mass production of cookies.' },
+            { id: 'bank', name: 'Bank', icon: 'fa-landmark', cost: 1400000, cps: 1400, desc: 'Generates cookies from interest.' },
+            { id: 'temple', name: 'Temple', icon: 'fa-vihara', cost: 20000000, cps: 7800, desc: 'Full of precious cookie idols.' },
+            { id: 'wizard', name: 'Wizard Tower', icon: 'fa-hat-wizard', cost: 330000000, cps: 44000, desc: 'Summons cookies with magic spells.' },
+            { id: 'ship', name: 'Shipment', icon: 'fa-rocket', cost: 5100000000, cps: 260000, desc: 'Brings cookies from the cookie planet.' },
+            { id: 'alchemy', name: 'Alchemy Lab', icon: 'fa-flask', cost: 75000000000, cps: 1600000, desc: 'Turns gold into cookies.' },
+            { id: 'portal', name: 'Portal', icon: 'fa-dungeon', cost: 1000000000000, cps: 10000000, desc: 'Opens a door to the Cookieverse.' },
+            { id: 'timemachine', name: 'Time Machine', icon: 'fa-clock', cost: 14000000000000, cps: 65000000, desc: 'Brings cookies from the past.' }
+        ];
+
+        const UPGRADES = [
+            { id: 'u_cursor_1', name: 'Reinforced Index Finger', cost: 500, trigger: 'cursor', triggerCount: 1, mult: 2, desc: 'Cursors are twice as efficient.' },
+            { id: 'u_cursor_2', name: 'Carpal Tunnel Prevention', cost: 5000, trigger: 'cursor', triggerCount: 10, mult: 2, desc: 'Cursors are twice as efficient.' },
+            { id: 'u_grandma_1', name: 'Forwards from Grandma', cost: 1000, trigger: 'grandma', triggerCount: 1, mult: 2, desc: 'Grandmas are twice as efficient.' },
+            { id: 'u_grandma_2', name: 'Rolling Pins', cost: 10000, trigger: 'grandma', triggerCount: 10, mult: 2, desc: 'Grandmas are twice as efficient.' },
+            { id: 'u_farm_1', name: 'Cheap Hoes', cost: 11000, trigger: 'farm', triggerCount: 1, mult: 2, desc: 'Farms are twice as efficient.' },
+            { id: 'u_click_1', name: 'Plastic Mouse', cost: 50000, trigger: 'click', triggerCount: 1000, mult: 2, desc: 'Clicking is twice as powerful.', type: 'click' },
+            { id: 'u_global_1', name: 'Sugar Rush', cost: 1000000, trigger: 'cps', triggerCount: 100, mult: 1.1, desc: 'All cookie production +10%', type: 'global' },
+        ];
+
+        /* --- GAME STATE --- */
+        let state = {
+            cookies: 0,
+            totalCookies: 0,
+            clickCount: 0,
+            startTime: Date.now(),
+            buildings: {}, // Stores count of each building
+            upgrades: [], // Stores IDs of purchased upgrades
+            bakeryName: "Cosmic Bakery"
+        };
+
+        // Initialize building counts
+        BUILDINGS.forEach(b => state.buildings[b.id] = 0);
+
+        /* --- UTILS --- */
+        const formatNumber = (num) => {
+            if (num < 1000) return Math.floor(num);
+            const suffixes = ["", "k", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"];
+            const suffixNum = Math.floor(("" + Math.floor(num)).length / 3);
+            let shortValue = parseFloat((suffixNum !== 0 ? (num / Math.pow(1000, suffixNum)) : num).toPrecision(3));
+            if (shortValue % 1 !== 0) {
+                shortValue = shortValue.toFixed(1);
+            }
+            return shortValue + suffixes[suffixNum];
+        };
+
+        const getBuildingPrice = (id) => {
+            const base = BUILDINGS.find(b => b.id === id);
+            return Math.floor(base.cost * Math.pow(1.15, state.buildings[id]));
+        };
+
+        const getCPS = () => {
+            let cps = 0;
+            
+            // Base Calculation
+            BUILDINGS.forEach(b => {
+                let buildingCps = b.cps;
+                // Apply specific upgrades
+                state.upgrades.forEach(uId => {
+                    const upg = UPGRADES.find(u => u.id === uId);
+                    if (upg && upg.trigger === b.id) buildingCps *= upg.mult;
+                });
+                cps += buildingCps * state.buildings[b.id];
+            });
+
+            // Global Multipliers
+            state.upgrades.forEach(uId => {
+                const upg = UPGRADES.find(u => u.id === uId);
+                if (upg && upg.type === 'global') cps *= upg.mult;
+            });
+
+            return cps;
+        };
+
+        const getClickPower = () => {
+            let power = 1;
+            // Add % of CPS to click power (standard mechanic)
+            power += getCPS() * 0.05; 
+            
+            // Click Upgrades
+            state.upgrades.forEach(uId => {
+                const upg = UPGRADES.find(u => u.id === uId);
+                if (upg && upg.type === 'click') power *= upg.mult;
+            });
+            return power;
+        };
+
+        /* --- UI RENDERER --- */
+        const ui = {
+            cookieCount: document.getElementById('cookie-count'),
+            cpsDisplay: document.getElementById('cps-display'),
+            storeContainer: document.getElementById('store-container'),
+            upgradesContainer: document.getElementById('upgrades-container'),
+            bigCookie: document.getElementById('big-cookie'),
+            toastContainer: document.getElementById('toast-container'),
+            bakeryName: document.getElementById('bakery-name')
+        };
+
+        const createParticles = (x, y, text) => {
+            const el = document.createElement('div');
+            el.className = 'floating-text text-2xl';
+            el.innerHTML = `+${text}`;
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 1000);
+        };
+
+        const showToast = (msg, color = 'bg-blue-600') => {
+            const el = document.createElement('div');
+            el.className = `${color} text-white p-3 rounded shadow-lg text-sm font-semibold opacity-0 transform translate-y-2 transition duration-500`;
+            el.innerHTML = msg;
+            ui.toastContainer.appendChild(el);
+            
+            // Animation in
+            requestAnimationFrame(() => {
+                el.classList.remove('opacity-0', 'translate-y-2');
+            });
+
+            // Remove
+            setTimeout(() => {
+                el.classList.add('opacity-0');
+                setTimeout(() => el.remove(), 500);
+            }, 3000);
+        };
+
+        const renderStore = () => {
+            ui.storeContainer.innerHTML = '';
+            
+            BUILDINGS.forEach(b => {
+                const count = state.buildings[b.id];
+                const price = getBuildingPrice(b.id);
+                const canAfford = state.cookies >= price;
+                
+                // Only show if we have at least 70% of the cost of the base item OR we own one
+                // Keeps the list clean early game
+                if (state.totalCookies < b.cost * 0.7 && count === 0 && b.id !== 'cursor') return;
+
+                const div = document.createElement('div');
+                div.className = `relative p-3 rounded-lg flex items-center select-none transition border-2 
+                    ${canAfford ? 'bg-gray-800 border-gray-600 hover:bg-gray-700 cursor-pointer' : 'bg-gray-800 opacity-60 border-transparent cursor-not-allowed'}`;
+                
+                div.onclick = () => Game.buyBuilding(b.id);
+
+                div.innerHTML = `
+                    <div class="w-12 h-12 bg-gray-900 rounded-full flex items-center justify-center text-2xl text-blue-400 mr-4 shadow-inner">
+                        <i class="fas ${b.icon}"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-lg">${b.name}</span>
+                            <span class="text-2xl font-bold text-gray-600 opacity-30">${count}</span>
+                        </div>
+                        <div class="text-sm ${canAfford ? 'text-green-400' : 'text-red-400'}">
+                            <i class="fas fa-cookie"></i> ${formatNumber(price)}
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">${b.desc}</div>
+                    </div>
+                `;
+                ui.storeContainer.appendChild(div);
+            });
+        };
+
+        const renderUpgrades = () => {
+            ui.upgradesContainer.innerHTML = '';
+            let hasUpgrades = false;
+
+            UPGRADES.forEach(u => {
+                // If already bought, don't show
+                if (state.upgrades.includes(u.id)) return;
+
+                // Check unlock conditions
+                let unlocked = false;
+                if (u.trigger === 'click' && state.clickCount >= u.triggerCount) unlocked = true;
+                else if (u.trigger === 'cps' && state.totalCookies >= u.triggerCount) unlocked = true; // Simplified for demo
+                else if (state.buildings[u.trigger] >= u.triggerCount) unlocked = true;
+
+                if (unlocked) {
+                    hasUpgrades = true;
+                    const canAfford = state.cookies >= u.cost;
+                    
+                    const div = document.createElement('div');
+                    div.className = `w-12 h-12 rounded border-2 flex items-center justify-center text-xl cursor-pointer relative group transition
+                        ${canAfford ? 'bg-gray-700 border-yellow-500 hover:bg-gray-600' : 'bg-gray-800 border-red-900 opacity-50'}`;
+                    
+                    div.onclick = () => Game.buyUpgrade(u.id);
+                    
+                    div.innerHTML = `
+                        <i class="fas fa-arrow-alt-circle-up ${canAfford ? 'text-yellow-400' : 'text-gray-500'}"></i>
+                        <!-- Tooltip -->
+                        <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 bg-black border border-yellow-600 text-white text-xs p-2 rounded shadow-xl hidden group-hover:block z-50 pointer-events-none">
+                            <div class="font-bold text-yellow-500 mb-1">${u.name}</div>
+                            <div class="mb-1">${u.desc}</div>
+                            <div class="text-gray-400">Cost: ${formatNumber(u.cost)}</div>
+                        </div>
+                    `;
+                    ui.upgradesContainer.appendChild(div);
+                }
+            });
+
+            if(!hasUpgrades && state.upgrades.length > 0) {
+                 ui.upgradesContainer.innerHTML = '<div class="text-xs text-gray-600 w-full text-center">All unlocked upgrades purchased!</div>';
+            } else if (!hasUpgrades) {
+                ui.upgradesContainer.innerHTML = '<div class="text-xs text-gray-600 w-full text-center">Play to unlock upgrades...</div>';
+            }
+        };
+
+        const updateGUI = () => {
+            ui.cookieCount.innerText = formatNumber(state.cookies);
+            ui.cpsDisplay.innerText = formatNumber(getCPS());
+            document.title = `${formatNumber(state.cookies)} cookies - Cosmic Clicker`;
+            ui.bakeryName.innerText = state.bakeryName;
+        };
+
+        /* --- CORE LOGIC --- */
+        const Game = {
+            init: () => {
+                Game.load();
+                
+                // Click Listener
+                ui.bigCookie.addEventListener('mousedown', (e) => {
+                    const clickVal = getClickPower();
+                    state.cookies += clickVal;
+                    state.totalCookies += clickVal;
+                    state.clickCount++;
+                    
+                    // Audio could go here
+                    
+                    // Visuals
+                    createParticles(e.clientX, e.clientY, formatNumber(clickVal));
+                    updateGUI();
+                    renderStore(); // Update affordability
+                    renderUpgrades();
+                });
+
+                // Name Change
+                ui.bakeryName.addEventListener('click', () => {
+                    const newName = prompt("Name your bakery:", state.bakeryName);
+                    if(newName) {
+                        state.bakeryName = newName;
+                        updateGUI();
+                    }
+                });
+
+                // News Ticker Loop
+                const newsItems = [
+                    "Grandmas demand higher wages.",
+                    "Cookies found to be the meaning of life.",
+                    "Scientists discover a new cookie-based planet.",
+                    "Stock market crashes, invests solely in chocolate chips.",
+                    "Your bakery is now the #1 tourist destination."
+                ];
+                
+                setInterval(() => {
+                    const news = document.getElementById('news-ticker');
+                    const text = newsItems[Math.floor(Math.random() * newsItems.length)];
+                    
+                    // Simple animation reset
+                    news.style.opacity = 0;
+                    setTimeout(() => {
+                        news.innerText = text;
+                        news.style.opacity = 1;
+                    }, 500);
+                }, 10000);
+
+                // Game Loops
+                Game.loop();
+                Game.saveLoop();
+            },
+
+            loop: () => {
+                const now = Date.now();
+                // We use requestAnimationFrame for smoothness, but logic runs on accumulated time
+                // For this simple version, we'll just add CPS/30 every frame (assuming 30fps) 
+                // A better approach is delta time, implemented below:
+                
+                let lastTime = Date.now();
+                
+                const frame = () => {
+                    const currentTime = Date.now();
+                    const deltaTime = (currentTime - lastTime) / 1000; // in seconds
+                    lastTime = currentTime;
+
+                    if (deltaTime > 0) {
+                        const generated = getCPS() * deltaTime;
+                        state.cookies += generated;
+                        state.totalCookies += generated;
+                        updateGUI();
+                        
+                        // To prevent constant DOM thrashing, only re-render store if cookies changed significantly or every 1s
+                        // For this demo, we'll check integer changes
+                        if(Math.floor(state.cookies) !== Math.floor(state.cookies - generated)) {
+                            renderStore(); 
+                            renderUpgrades();
+                        }
+                    }
+                    requestAnimationFrame(frame);
+                };
+                requestAnimationFrame(frame);
+            },
+
+            buyBuilding: (id) => {
+                const price = getBuildingPrice(id);
+                if (state.cookies >= price) {
+                    state.cookies -= price;
+                    state.buildings[id]++;
+                    showToast(`Bought ${BUILDINGS.find(b=>b.id===id).name}!`);
+                    renderStore();
+                    renderUpgrades();
+                    updateGUI();
+                }
+            },
+
+            buyUpgrade: (id) => {
+                const upg = UPGRADES.find(u => u.id === id);
+                if (state.cookies >= upg.cost) {
+                    state.cookies -= upg.cost;
+                    state.upgrades.push(id);
+                    showToast(`Upgrade Unlocked: ${upg.name}!`, 'bg-yellow-600');
+                    renderStore();
+                    renderUpgrades();
+                    updateGUI();
+                }
+            },
+
+            save: () => {
+                localStorage.setItem('cosmicClickerSave', JSON.stringify(state));
+                showToast("Game Saved");
+            },
+
+            load: () => {
+                const saved = localStorage.getItem('cosmicClickerSave');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    // Merge save with default state to handle version updates
+                    state = { ...state, ...parsed };
+                    showToast("Welcome Back!");
+                }
+                renderStore();
+                renderUpgrades();
+                updateGUI();
+            },
+
+            saveLoop: () => {
+                setInterval(Game.save, 30000); // Auto save every 30s
+            },
+
+            reset: () => {
+                if(confirm("Are you sure you want to wipe your save? This cannot be undone.")) {
+                    localStorage.removeItem('cosmicClickerSave');
+                    location.reload();
+                }
+            }
+        };
+
+        // Start Game
+        Game.init();
+
+    </script>
+</body>
+</html>

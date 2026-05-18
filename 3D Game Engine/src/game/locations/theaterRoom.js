@@ -16,6 +16,7 @@ export class TheaterRoomScene {
         this.scene = scene;
         this.objects = [];
         this.lights = [];
+        this.seats = [];
 
         this.gameConfig = gameConfig || {
             title: 'Game',
@@ -437,6 +438,8 @@ export class TheaterRoomScene {
     }
 
     buildSeats() {
+        this.seats = [];
+
         const seatMat = new THREE.MeshStandardMaterial({
             color: 0x18163a,
             roughness: 0.6,
@@ -509,9 +512,12 @@ export class TheaterRoomScene {
         glowPool.position.set(0, 0.02, 1.5);
         group.add(glowPool);
 
+        group.rotation.y = Math.PI;
         group.position.set(x, 0, z);
         this.scene.add(group);
         this.objects.push(group);
+
+        this.seats.push({ x, z });
     }
 
     buildExitDoor() {
@@ -731,6 +737,20 @@ export class TheaterRoomScene {
 
     setupExitTrigger(callback) {
         this.onExitApproach = callback;
+    }
+
+    setupSeatTriggers(onEnterSeat, onExitSeat) {
+        this.seats.forEach((seat, i) => {
+            const trigger = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.5, 2.4));
+            trigger.visible = false;
+            trigger.position.set(seat.x, 1.2, seat.z);
+            this.scene.add(trigger);
+            this.objects.push(trigger);
+            Collision.addTrigger(trigger, (event) => {
+                if (event === 'enter') onEnterSeat(seat);
+                else onExitSeat(seat);
+            }, `seat-${i}`);
+        });
     }
 
     getSpawnPoint() {

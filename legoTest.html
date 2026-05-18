@@ -1,0 +1,2303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Kai Parnes - Theater Portfolio (Enhanced)</title>
+  <style>
+    :root{
+      --ui: rgba(10,10,14,.55);
+      --ui2: rgba(10,10,14,.75);
+      --gold: #f6e1a5;
+      --red: #ff4d4d;
+      --soft: rgba(255,255,255,.75);
+    }
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      user-select: none;
+    }
+
+    /* HUD / UI */
+    #ui {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #topbar {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      color: white;
+      text-shadow: 1px 1px 5px rgba(0,0,0,.9);
+      padding: 10px 14px;
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(12,12,18,.55), rgba(12,12,18,.22));
+      backdrop-filter: blur(8px);
+      box-shadow: 0 10px 40px rgba(0,0,0,.35);
+      max-width: min(900px, calc(100vw - 24px));
+    }
+    #title {
+      font-size: 22px;
+      letter-spacing: .8px;
+      margin: 0 0 4px 0;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    #subtitle {
+      margin: 0;
+      font-size: 13px;
+      opacity: .9;
+      line-height: 1.35;
+    }
+    #hud {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: flex-end;
+    }
+    .pill {
+      pointer-events: none;
+      color: white;
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: var(--ui);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+      font-size: 13px;
+      line-height: 1;
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      white-space: nowrap;
+    }
+    #near {
+      opacity: .0;
+      transform: translateY(-4px);
+      transition: opacity .18s ease, transform .18s ease;
+    }
+    #near.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    #crosshair{
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 14px;
+      height: 14px;
+      transform: translate(-50%, -50%);
+      opacity: .55;
+    }
+    #crosshair:before, #crosshair:after{
+      content:"";
+      position:absolute;
+      background: rgba(255,255,255,.55);
+      box-shadow: 0 0 12px rgba(255,255,255,.25);
+      border-radius: 2px;
+    }
+    #crosshair:before{
+      width: 2px;
+      height: 14px;
+      left: 6px; top: 0;
+    }
+    #crosshair:after{
+      width: 14px;
+      height: 2px;
+      left: 0; top: 6px;
+    }
+
+    /* Help panel */
+    #help {
+      position: absolute;
+      left: 16px;
+      bottom: 16px;
+      width: min(420px, calc(100vw - 32px));
+      background: var(--ui2);
+      color: white;
+      border-radius: 16px;
+      padding: 14px 14px 12px;
+      box-shadow: 0 18px 50px rgba(0,0,0,.5);
+      backdrop-filter: blur(10px);
+      transform: translateY(18px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease, transform .2s ease;
+    }
+    #help.show{
+      opacity: 1;
+      transform: translateY(0);
+    }
+    #help h3{
+      margin: 0 0 10px;
+      font-size: 14px;
+      letter-spacing: .6px;
+      color: var(--gold);
+    }
+    #help .row{
+      display: grid;
+      grid-template-columns: 130px 1fr;
+      gap: 8px 10px;
+      font-size: 13px;
+      line-height: 1.35;
+      opacity: .95;
+    }
+    #help kbd{
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.14);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      margin-right: 6px;
+    }
+    #help .note{
+      margin-top: 10px;
+      font-size: 12px;
+      opacity: .8;
+    }
+
+    /* Toast */
+    #toast {
+      position: absolute;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%) translateY(10px);
+      opacity: 0;
+      transition: opacity .2s ease, transform .2s ease;
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: rgba(0,0,0,.55);
+      color: white;
+      font-size: 13px;
+      box-shadow: 0 14px 45px rgba(0,0,0,.55);
+      backdrop-filter: blur(10px);
+      pointer-events: none;
+      max-width: min(740px, calc(100vw - 36px));
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #toast.show{
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Fade overlay for portal transitions */
+    #fade {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 55%, rgba(255,255,255,.0), rgba(0,0,0,.0) 55%, rgba(0,0,0,0.0));
+      opacity: 0;
+      pointer-events: none;
+      z-index: 20;
+      transition: opacity .55s ease;
+    }
+    #fade.on {
+      opacity: 1;
+      background: radial-gradient(circle at 50% 55%, rgba(255,255,255,.12), rgba(0,0,0,.78) 62%, rgba(0,0,0,1));
+    }
+
+    /* Film vibe overlay */
+    #film {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9;
+      opacity: .25;
+      mix-blend-mode: screen;
+      background:
+        repeating-linear-gradient(
+          to bottom,
+          rgba(255,255,255,.03) 0px,
+          rgba(255,255,255,.03) 1px,
+          rgba(0,0,0,.0) 3px,
+          rgba(0,0,0,.0) 6px
+        );
+    }
+    #grain{
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      z-index: 8;
+      opacity: .08;
+      background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.6'/%3E%3C/svg%3E");
+      background-size: 220px 220px;
+      mix-blend-mode: overlay;
+      animation: grainMove 5s steps(10) infinite;
+    }
+    @keyframes grainMove{
+      0%{ transform: translate(0,0); }
+      10%{ transform: translate(-2%, 1%); }
+      20%{ transform: translate(-4%, -2%); }
+      30%{ transform: translate(2%, -3%); }
+      40%{ transform: translate(-1%, 4%); }
+      50%{ transform: translate(-3%, 1%); }
+      60%{ transform: translate(4%, 0); }
+      70%{ transform: translate(2%, 2%); }
+      80%{ transform: translate(-2%, 3%); }
+      90%{ transform: translate(3%, -1%); }
+      100%{ transform: translate(0,0); }
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <div id="topbar">
+      <div id="title">🎬 <b>Kai’s Theater of Projects</b> <span style="opacity:.75">•</span> <span style="color:var(--gold)">Jump into a poster</span></div>
+      <p id="subtitle">
+        <b>WASD / Arrows</b> Move • <b>Mouse Drag</b> Look • <b>Space</b> Jump (Double) • <b>Shift</b> Run • <b>E</b> Enter • <b>R</b> Reset • <b>H</b> Help • <b>M</b> Mute
+      </p>
+    </div>
+
+    <div id="hud">
+      <div class="pill" id="coins">🍿 <span id="coinCount">0</span>/<span id="coinTotal">0</span></div>
+      <div class="pill">🎞️ Mode: <span id="mode">Theater</span></div>
+      <div class="pill" id="near">Press <b style="color:var(--gold)">E</b> or <b style="color:var(--gold)">jump in</b> → <span id="nearTitle"></span></div>
+    </div>
+
+    <div id="crosshair"></div>
+
+    <div id="help">
+      <h3>Controls</h3>
+      <div class="row">
+        <div><kbd>WASD</kbd><kbd>↑↓←→</kbd></div><div>Move</div>
+        <div><kbd>Mouse</kbd> drag</div><div>Look around</div>
+        <div><kbd>Space</kbd></div><div>Jump (double jump supported)</div>
+        <div><kbd>Shift</kbd></div><div>Run</div>
+        <div><kbd>E</kbd></div><div>Enter a highlighted poster without jumping</div>
+        <div><kbd>R</kbd></div><div>Return to the center of the current world</div>
+        <div><kbd>M</kbd></div><div>Mute / unmute audio</div>
+        <div><kbd>H</kbd></div><div>Toggle this panel</div>
+      </div>
+      <div class="note">Tip: Collect 🍿 for something… extra. The usher likes secrets.</div>
+    </div>
+
+    <div id="toast"></div>
+  </div>
+
+  <div id="grain"></div>
+  <div id="film"></div>
+  <div id="fade"></div>
+
+<script type="module">
+  import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+
+  // ============================================================
+  // Tim-friendly setup: single file, plain JS, no extra deps.
+  // ============================================================
+
+  // --- DOM ---
+  const elHelp = document.getElementById('help');
+  const elToast = document.getElementById('toast');
+  const elFade = document.getElementById('fade');
+  const elCoinCount = document.getElementById('coinCount');
+  const elCoinTotal = document.getElementById('coinTotal');
+  const elNear = document.getElementById('near');
+  const elNearTitle = document.getElementById('nearTitle');
+  const elMode = document.getElementById('mode');
+
+  // --- Global Variables ---
+  let camera, scene, renderer;
+  let player, playerMat;
+  const playerVel = new THREE.Vector3();
+  const playerSize = new THREE.Vector3(2.2, 2.2, 2.2);
+  const playerBox = new THREE.Box3();
+
+  // Controls
+  const keys = {
+    w:false,a:false,s:false,d:false,
+    shift:false,
+    e:false,
+  };
+  let isMouseDown = false;
+  let lastMouseX = 0;
+  let lastMouseY = 0;
+  let yaw = Math.PI;  // facing screen
+  let pitch = -0.12;
+
+  // Physics / feel
+  const GRAVITY = 70;             // units/s^2
+  const JUMP_V1 = 65;             // units/s
+  const JUMP_V2 = 55;             // units/s
+  let jumpsUsed = 0;
+  let onGround = false;
+  let coyoteTimer = 0;            // small grace after leaving ground
+  const COYOTE_TIME = 0.12;
+  let jumpBuffer = 0;             // buffer jump press right before landing
+  const JUMP_BUFFER = 0.12;
+  let lastJumpedAt = -999;        // for "jump into poster" gating
+
+  // Movement smoothing
+  const WALK_SPEED = 48;
+  const RUN_SPEED  = 78;
+  const ACCEL = 10;
+  const FRICTION = 12;
+
+  // Theater dimensions
+  const ROOM = {
+    W: 600,
+    D: 320,
+    H: 150
+  };
+
+  // Poster sizes (kept close to your originals)
+  const FRAME = {
+    baseW: 14,
+    baseH: 16,
+    scale: 5
+  };
+  FRAME.W = FRAME.baseW * FRAME.scale; // 70
+  FRAME.H = FRAME.baseH * FRAME.scale; // 80
+  FRAME.D = 2.2;
+
+  // Worlds
+  let currentWorld = "theater"; // "theater" | "vip"
+  let teleporting = false;
+
+  // World tracking
+  const worldObjects = [];
+  const portals = [];      // { mesh, bounds, project, glow, title, isSecret }
+  const collectibles = []; // { mesh, r, taken:false }
+  let totalPopcorn = 0;
+  let popcorn = 0;
+  let vipUnlocked = false;
+
+  // For "nearest portal" UI
+  let nearestPortal = null;
+
+  // Texture loader
+  const textureLoader = new THREE.TextureLoader();
+
+  // Clock
+  const clock = new THREE.Clock();
+
+  // Lighting references for effects
+  const lights = {
+    ambient: null,
+    ceiling: null,
+    projector: null,
+    posterPulses: [],
+  };
+
+  // Projector beam / dust
+  let beamMesh = null;
+  let dustPoints = null;
+  let dustGeo = null;
+  let dustVel = null;
+  let projectorPos = new THREE.Vector3();
+  let screenPos = new THREE.Vector3();
+
+  // Screen canvas texture
+  let screenCanvas, screenCtx, screenTex, screenMat;
+  let screenMessage = "NOW SHOWING";
+
+  // Usher bot
+  let usher = null;
+  let usherBubbleTimer = 0;
+  let usherMood = 0; // changes after popcorn, etc.
+
+  // Easter eggs
+  const konami = ["arrowup","arrowup","arrowdown","arrowdown","arrowleft","arrowright","arrowleft","arrowright","b","a"];
+  const konamiBuf = [];
+  let rainbowMode = false;
+
+  // Audio (procedural, no files)
+  const audio = createAudioEngine();
+
+  // Your project list (same filenames/links)
+  const projects = [
+    { title: "Blast Block", description: "Explode colorful blocks in a fast-paced puzzle frenzy!", image: "blastblock.png", link: "blastblock.html" },
+    { title: "Age of War", description: "Conquer ages of history in this epic war simulation!", image: "ageOfWar.png", link: "ageOfWar.html" },
+    { title: "Cheeseburger Empire", description: "Grow your burger empire one click at a time!", image: "idlegame.png", link: "Idle.html" },
+    { title: "Snake Game", description: "Enjoy the retro snake experience with a modern twist!", image: "snakeGame.png", link: "snakeGame.html" },
+    { title: "Sharknado CYOA", description: "Survive swirling sharks in this comedic adventure!", image: "sharknado.webp", link: "sharkNado.html" },
+    { title: "Doodle Jump", description: "Jump to new heights and dodge enemies in a doodled world!", image: "doodleJump.png", link: "doodleJump.html" }
+  ];
+
+  // Secret “world”
+  const vipWorld = {
+    title: "VIP LOUNGE",
+    description: "A little secret world behind the theater wall.",
+    image: null,
+    link: "#vip"
+  };
+
+  init();
+  animate();
+
+  // ============================================================
+  // INIT
+  // ============================================================
+
+  function init() {
+    // Scene
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050509);
+    scene.fog = new THREE.Fog(0x050509, 90, 620);
+
+    // Camera
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2200);
+
+    // Renderer
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    renderer.physicallyCorrectLights = true;
+    document.body.appendChild(renderer.domElement);
+
+    // Player
+    const playerGeo = new THREE.BoxGeometry(playerSize.x, playerSize.y, playerSize.z);
+    playerMat = new THREE.MeshStandardMaterial({
+      color: 0xff6666,
+      roughness: 0.35,
+      metalness: 0.15,
+      emissive: new THREE.Color(0x000000),
+      emissiveIntensity: 1.0
+    });
+    player = new THREE.Mesh(playerGeo, playerMat);
+    player.position.set(0, 2, -70);
+    player.castShadow = true;
+    scene.add(player);
+
+    // Lights
+    lights.ambient = new THREE.AmbientLight(0xffffff, 0.22);
+    scene.add(lights.ambient);
+
+    // Ceiling point light (warm red)
+    lights.ceiling = new THREE.PointLight(0xff2a2a, 55, 650);
+    lights.ceiling.position.set(0, ROOM.H - 8, 0);
+    scene.add(lights.ceiling);
+
+    // Events
+    window.addEventListener('resize', onWindowResize);
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('mousemove', onMouseMove);
+
+    // Make audio startable on interaction (browsers require a user gesture)
+    document.addEventListener('pointerdown', () => audio.unlock(), { once: true });
+
+    // Load starting world
+    loadTheater(true);
+
+    // UI
+    toast("Find a poster. Jump into it like a Mario painting… or press E when close.");
+    setCoinsUI(0, 0);
+  }
+
+  // ============================================================
+  // WORLD HELPERS
+  // ============================================================
+
+  function add(obj) {
+    scene.add(obj);
+    worldObjects.push(obj);
+  }
+
+  function clearWorld() {
+    // Remove world objects
+    for (const obj of worldObjects) {
+      scene.remove(obj);
+      safeDispose(obj);
+    }
+    worldObjects.length = 0;
+
+    // Remove portals
+    for (const p of portals) {
+      scene.remove(p.mesh);
+      safeDispose(p.mesh);
+    }
+    portals.length = 0;
+
+    // Remove collectibles
+    for (const c of collectibles) {
+      scene.remove(c.mesh);
+      safeDispose(c.mesh);
+    }
+    collectibles.length = 0;
+
+    // Reset pulses list
+    lights.posterPulses.length = 0;
+
+    // Beam & dust
+    if (beamMesh) { scene.remove(beamMesh); safeDispose(beamMesh); beamMesh = null; }
+    if (dustPoints) { scene.remove(dustPoints); safeDispose(dustPoints); dustPoints = null; dustGeo = null; dustVel = null; }
+
+    // Screen
+    screenCanvas = null; screenCtx = null; screenTex = null; screenMat = null;
+
+    // Usher
+    if (usher) { scene.remove(usher); safeDispose(usher); usher = null; }
+  }
+
+  function safeDispose(obj){
+    obj.traverse?.((child) => {
+      if (child.geometry) child.geometry.dispose?.();
+      if (child.material) {
+        if (Array.isArray(child.material)) child.material.forEach(m => disposeMat(m));
+        else disposeMat(child.material);
+      }
+    });
+    if (obj.geometry) obj.geometry.dispose?.();
+    if (obj.material) {
+      if (Array.isArray(obj.material)) obj.material.forEach(m => disposeMat(m));
+      else disposeMat(obj.material);
+    }
+  }
+  function disposeMat(m){
+    if (!m) return;
+    if (m.map) m.map.dispose?.();
+    if (m.emissiveMap) m.emissiveMap.dispose?.();
+    if (m.normalMap) m.normalMap.dispose?.();
+    m.dispose?.();
+  }
+
+  // ------------------------------------------------------------
+  // Procedural textures (keeps it “plain”, no extra assets needed)
+  // ------------------------------------------------------------
+
+  function makeCarpetTexture() {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
+
+    // Base
+    ctx.fillStyle = "#160007";
+    ctx.fillRect(0,0,c.width,c.height);
+
+    // Subtle weave
+    for(let y=0;y<512;y+=4){
+      const a = 0.05 + 0.05*Math.sin(y*0.08);
+      ctx.fillStyle = `rgba(255,70,80,${a})`;
+      ctx.fillRect(0,y,512,1);
+    }
+
+    // Speckles
+    for(let i=0;i<5000;i++){
+      const x = Math.random()*512;
+      const y = Math.random()*512;
+      const r = Math.random()*1.8;
+      const o = 0.05 + Math.random()*0.08;
+      ctx.fillStyle = `rgba(240,180,120,${o})`;
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    }
+
+    // Theater pattern diamonds
+    ctx.globalAlpha = 0.16;
+    ctx.strokeStyle = "#f6e1a5";
+    ctx.lineWidth = 2;
+    for(let y=0;y<512;y+=64){
+      for(let x=0;x<512;x+=64){
+        ctx.beginPath();
+        ctx.moveTo(x+32,y+8);
+        ctx.lineTo(x+56,y+32);
+        ctx.lineTo(x+32,y+56);
+        ctx.lineTo(x+8,y+32);
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(20, 10);
+    tex.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
+    return tex;
+  }
+
+  function makeWallTexture() {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
+
+    // Gradient
+    const g = ctx.createLinearGradient(0,0,0,512);
+    g.addColorStop(0,"#0b0b10");
+    g.addColorStop(1,"#111118");
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,512,512);
+
+    // Noise
+    const img = ctx.getImageData(0,0,512,512);
+    for(let i=0;i<img.data.length;i+=4){
+      const n = (Math.random()*22)|0;
+      img.data[i]   += n;
+      img.data[i+1] += n;
+      img.data[i+2] += n;
+      img.data[i+3] = 255;
+    }
+    ctx.putImageData(img,0,0);
+
+    // Vignette
+    ctx.globalAlpha = .55;
+    const vg = ctx.createRadialGradient(256,256,40,256,256,290);
+    vg.addColorStop(0,"rgba(0,0,0,0)");
+    vg.addColorStop(1,"rgba(0,0,0,0.85)");
+    ctx.fillStyle = vg;
+    ctx.fillRect(0,0,512,512);
+    ctx.globalAlpha = 1;
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(4, 2);
+    tex.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
+    return tex;
+  }
+
+  function makePlaceholderPoster(title) {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 768;
+    const ctx = c.getContext('2d');
+
+    const bg = ctx.createLinearGradient(0,0,512,768);
+    bg.addColorStop(0,"#0c0c12");
+    bg.addColorStop(1,"#1b0b12");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0,0,512,768);
+
+    // Glow
+    ctx.globalAlpha = 0.9;
+    const gl = ctx.createRadialGradient(256,260,20,256,260,360);
+    gl.addColorStop(0,"rgba(246,225,165,0.55)");
+    gl.addColorStop(1,"rgba(246,225,165,0)");
+    ctx.fillStyle = gl;
+    ctx.fillRect(0,0,512,768);
+    ctx.globalAlpha = 1;
+
+    // Title
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fillRect(40,560,432,150);
+    ctx.fillStyle = "#f6e1a5";
+    ctx.font = "bold 44px Segoe UI, Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    wrapText(ctx, title, 256, 635, 400, 54);
+
+    // Tiny “Now Playing”
+    ctx.font = "600 18px Segoe UI, Arial";
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.fillText("NOW PLAYING", 256, 520);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  function wrapText(ctx, text, x, y, maxWidth, lineHeight){
+    const words = text.split(" ");
+    let line = "";
+    const lines = [];
+    for (const w of words){
+      const test = line ? line + " " + w : w;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(line);
+        line = w;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+
+    const startY = y - (lines.length-1) * (lineHeight/2);
+    lines.forEach((ln, i) => ctx.fillText(ln, x, startY + i*lineHeight));
+  }
+
+  // ============================================================
+  // THEATER WORLD
+  // ============================================================
+
+  function loadTheater(isFirstLoad=false) {
+    currentWorld = "theater";
+    elMode.textContent = "Theater";
+    teleporting = false;
+    nearestPortal = null;
+
+    clearWorld();
+
+    // Reset progress (only on first load or manual reset)
+    if (isFirstLoad) {
+      popcorn = 0;
+      vipUnlocked = false;
+      usherMood = 0;
+    }
+
+    // Room
+    createTheaterRoom();
+
+    // Posters
+    placePosters();
+
+    // Collectibles
+    spawnPopcorn();
+
+    // Usher
+    createUsherBot();
+
+    // Reset player
+    resetPlayerToTheater();
+
+    // Screen message
+    setScreenMessage("NOW SHOWING");
+
+    // UI
+    setCoinsUI(popcorn, totalPopcorn);
+
+    if (!isFirstLoad) toast("Back to the theater.");
+  }
+
+  function resetPlayerToTheater() {
+    player.position.set(0, 2, -70);
+    playerVel.set(0,0,0);
+    onGround = false;
+    jumpsUsed = 0;
+    coyoteTimer = 0;
+    jumpBuffer = 0;
+
+    yaw = Math.PI;
+    pitch = -0.12;
+  }
+
+  function createTheaterRoom() {
+    // Floor
+    const floorTex = makeCarpetTexture();
+    const floorGeo = new THREE.PlaneGeometry(ROOM.W, ROOM.D);
+    const floorMat = new THREE.MeshStandardMaterial({
+      map: floorTex,
+      color: 0xffffff,
+      roughness: 0.92,
+      metalness: 0.02
+    });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    add(floor);
+
+    // Ceiling
+    const ceilGeo = new THREE.PlaneGeometry(ROOM.W, ROOM.D);
+    const ceilMat = new THREE.MeshStandardMaterial({
+      color: 0x040406,
+      roughness: 0.95,
+      metalness: 0.02
+    });
+    const ceiling = new THREE.Mesh(ceilGeo, ceilMat);
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.y = ROOM.H;
+    add(ceiling);
+
+    // Walls with subtle texture
+    const wallTex = makeWallTexture();
+    const wallMat = new THREE.MeshStandardMaterial({
+      map: wallTex,
+      color: 0xffffff,
+      roughness: 0.9,
+      metalness: 0.02
+    });
+
+    // Front wall (+Z)
+    const frontWallGeo = new THREE.PlaneGeometry(ROOM.W, ROOM.H);
+    const frontWall = new THREE.Mesh(frontWallGeo, wallMat);
+    frontWall.position.set(0, ROOM.H/2, ROOM.D/2);
+    frontWall.rotation.y = Math.PI;
+    frontWall.receiveShadow = true;
+    add(frontWall);
+
+    // Back wall (-Z)
+    const backWall = new THREE.Mesh(frontWallGeo, wallMat);
+    backWall.position.set(0, ROOM.H/2, -ROOM.D/2);
+    backWall.receiveShadow = true;
+    add(backWall);
+
+    // Side walls
+    const sideWallGeo = new THREE.PlaneGeometry(ROOM.D, ROOM.H);
+
+    const leftWall = new THREE.Mesh(sideWallGeo, wallMat);
+    leftWall.position.set(-ROOM.W/2, ROOM.H/2, 0);
+    leftWall.rotation.y = Math.PI/2;
+    leftWall.receiveShadow = true;
+    add(leftWall);
+
+    const rightWall = new THREE.Mesh(sideWallGeo, wallMat);
+    rightWall.position.set(ROOM.W/2, ROOM.H/2, 0);
+    rightWall.rotation.y = -Math.PI/2;
+    rightWall.receiveShadow = true;
+    add(rightWall);
+
+    // Screen (canvas texture that animates)
+    createScreen();
+
+    // Projector + spotlight
+    createProjector();
+
+    // Seats (visuals)
+    createSeats();
+
+    // Aisle lights
+    createAisleLights();
+
+    // Curtains framing screen (simple but effective)
+    createCurtains();
+  }
+
+  function createScreen() {
+    const screenW = ROOM.W * 0.72;
+    const screenH = ROOM.H * 0.62;
+
+    // Canvas texture
+    screenCanvas = document.createElement("canvas");
+    screenCanvas.width = 1024;
+    screenCanvas.height = 512;
+    screenCtx = screenCanvas.getContext("2d");
+
+    screenTex = new THREE.CanvasTexture(screenCanvas);
+    screenTex.colorSpace = THREE.SRGBColorSpace;
+
+    screenMat = new THREE.MeshStandardMaterial({
+      map: screenTex,
+      emissiveMap: screenTex,
+      emissive: new THREE.Color(0xffffff),
+      emissiveIntensity: 0.78,
+      roughness: 0.6,
+      metalness: 0.0
+    });
+
+    const screenGeo = new THREE.PlaneGeometry(screenW, screenH);
+    const screen = new THREE.Mesh(screenGeo, screenMat);
+    screen.position.set(0, ROOM.H * 0.60, ROOM.D/2 - 1.2);
+    screen.rotation.y = Math.PI;
+    screen.receiveShadow = true;
+    add(screen);
+
+    // Reference for projector aim
+    screenPos.set(0, ROOM.H * 0.60, ROOM.D/2 - 1.2);
+  }
+
+  function setScreenMessage(msg) {
+    screenMessage = msg;
+  }
+
+  function updateScreen(dt) {
+    if (!screenCtx || !screenTex) return;
+
+    const t = performance.now() * 0.001;
+
+    // Background gradient
+    const w = screenCanvas.width, h = screenCanvas.height;
+    const g = screenCtx.createLinearGradient(0,0,0,h);
+    g.addColorStop(0, "#0b0b12");
+    g.addColorStop(1, "#07070c");
+    screenCtx.fillStyle = g;
+    screenCtx.fillRect(0,0,w,h);
+
+    // Moving light sweep
+    screenCtx.globalAlpha = 0.22;
+    const sweepX = (Math.sin(t*0.9)*0.5+0.5)*w;
+    const sweep = screenCtx.createLinearGradient(sweepX-240,0,sweepX+240,0);
+    sweep.addColorStop(0,"rgba(246,225,165,0)");
+    sweep.addColorStop(.5,"rgba(246,225,165,0.55)");
+    sweep.addColorStop(1,"rgba(246,225,165,0)");
+    screenCtx.fillStyle = sweep;
+    screenCtx.fillRect(0,0,w,h);
+    screenCtx.globalAlpha = 1;
+
+    // Title
+    screenCtx.textAlign = "center";
+    screenCtx.textBaseline = "middle";
+
+    // “Film flicker”
+    const flicker = 0.92 + 0.08*Math.sin(t*18.0) + 0.04*Math.sin(t*37.0);
+
+    screenCtx.globalAlpha = 0.95 * flicker;
+    screenCtx.fillStyle = "rgba(0,0,0,0.40)";
+    screenCtx.fillRect(w*0.18, h*0.30, w*0.64, h*0.40);
+
+    screenCtx.fillStyle = "rgba(246,225,165,0.95)";
+    screenCtx.font = "800 64px Segoe UI, Arial";
+    screenCtx.fillText(screenMessage, w/2, h*0.46);
+
+    // Sub line
+    screenCtx.fillStyle = "rgba(255,255,255,0.78)";
+    screenCtx.font = "500 22px Segoe UI, Arial";
+    const sub = (currentWorld === "theater")
+      ? (vipUnlocked ? "VIP Lounge is unlocked. Find the back wall…" : "Collect 🍿. Posters are portals.")
+      : "Press R to return to the Theater";
+    screenCtx.fillText(sub, w/2, h*0.60);
+
+    // Bottom tiny ticker
+    screenCtx.globalAlpha = 0.85;
+    screenCtx.fillStyle = "rgba(255,255,255,0.65)";
+    screenCtx.font = "600 16px Segoe UI, Arial";
+    const ticker = rainbowMode ? "RAINBOW REEL: ON" : "RAINBOW REEL: OFF";
+    screenCtx.fillText(ticker, w/2, h*0.88);
+    screenCtx.globalAlpha = 1;
+
+    // Scanlines (in-canvas)
+    screenCtx.globalAlpha = 0.12;
+    screenCtx.fillStyle = "rgba(255,255,255,0.10)";
+    const lineY = (t*80 % h) | 0;
+    screenCtx.fillRect(0, lineY, w, 2);
+    screenCtx.globalAlpha = 1;
+
+    screenTex.needsUpdate = true;
+  }
+
+  function createProjector() {
+    // Projector box
+    const projGeo = new THREE.BoxGeometry(12, 8, 18);
+    const projMat = new THREE.MeshStandardMaterial({
+      color: 0x111111,
+      roughness: 0.25,
+      metalness: 0.55
+    });
+    const proj = new THREE.Mesh(projGeo, projMat);
+    proj.position.set(0, ROOM.H - 16, -ROOM.D/2 + 22);
+    proj.castShadow = true;
+    add(proj);
+
+    projectorPos.copy(proj.position);
+
+    // Spotlight
+    lights.projector = new THREE.SpotLight(0xffffff, 240, 1200, Math.PI/10, 0.55, 1.0);
+    lights.projector.position.copy(projectorPos);
+    lights.projector.target.position.copy(screenPos);
+    lights.projector.castShadow = true;
+    lights.projector.shadow.mapSize.set(1024, 1024);
+    scene.add(lights.projector);
+    scene.add(lights.projector.target);
+
+    // Beam (transparent cone)
+    const dir = new THREE.Vector3().subVectors(screenPos, projectorPos);
+    const beamLen = dir.length();
+    dir.normalize();
+
+    const beamGeo = new THREE.ConeGeometry(45, beamLen, 34, 1, true);
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.085,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+
+    beamMesh = new THREE.Mesh(beamGeo, beamMat);
+
+    // Cone points up by default; rotate to point along dir
+    beamMesh.position.copy(projectorPos).addScaledVector(dir, beamLen * 0.5);
+    beamMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+    beamMesh.rotateX(Math.PI); // flip so it widens toward the screen
+    add(beamMesh);
+
+    // Dust particles inside beam
+    createDustInBeam(projectorPos, screenPos, 250);
+  }
+
+  function createDustInBeam(from, to, count) {
+    const dir = new THREE.Vector3().subVectors(to, from);
+    const len = dir.length();
+    dir.normalize();
+
+    dustGeo = new THREE.BufferGeometry();
+    const pos = new Float32Array(count * 3);
+    dustVel = new Float32Array(count);
+
+    for (let i=0;i<count;i++){
+      // Random along length
+      const d = Math.random() * len;
+      // Random radius (more near screen)
+      const rMax = 2 + 38 * (d/len);
+      const ang = Math.random() * Math.PI * 2;
+      const rad = Math.sqrt(Math.random()) * rMax;
+
+      // Build local coordinates around beam axis
+      const right = new THREE.Vector3(1,0,0);
+      if (Math.abs(dir.dot(right)) > 0.9) right.set(0,0,1);
+      const u = new THREE.Vector3().crossVectors(dir, right).normalize();
+      const v = new THREE.Vector3().crossVectors(dir, u).normalize();
+
+      const p = new THREE.Vector3()
+        .copy(from)
+        .addScaledVector(dir, d)
+        .addScaledVector(u, Math.cos(ang) * rad)
+        .addScaledVector(v, Math.sin(ang) * rad);
+
+      pos[i*3+0] = p.x;
+      pos[i*3+1] = p.y;
+      pos[i*3+2] = p.z;
+
+      dustVel[i] = 0.35 + Math.random()*0.8;
+    }
+
+    dustGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+
+    const mat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 1.4,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+
+    dustPoints = new THREE.Points(dustGeo, mat);
+    add(dustPoints);
+  }
+
+  function updateDust(dt) {
+    if (!dustGeo || !dustPoints) return;
+
+    const from = projectorPos;
+    const to = screenPos;
+    const dir = new THREE.Vector3().subVectors(to, from);
+    const len = dir.length();
+    dir.normalize();
+
+    const pos = dustGeo.attributes.position.array;
+
+    for (let i=0;i<dustVel.length;i++){
+      pos[i*3+0] += (Math.sin(i*12.3 + performance.now()*0.001)*0.06) * dt*60;
+      pos[i*3+1] += (Math.cos(i*9.7  + performance.now()*0.001)*0.05) * dt*60;
+
+      // drift toward screen
+      pos[i*3+0] += dir.x * dustVel[i] * dt * 18;
+      pos[i*3+1] += dir.y * dustVel[i] * dt * 18;
+      pos[i*3+2] += dir.z * dustVel[i] * dt * 18;
+
+      // wrap: if beyond screen, respawn near projector
+      const p = new THREE.Vector3(pos[i*3+0], pos[i*3+1], pos[i*3+2]);
+      const along = p.clone().sub(from).dot(dir);
+      if (along > len) {
+        const d = Math.random() * 30;
+        pos[i*3+0] = from.x + dir.x * d;
+        pos[i*3+1] = from.y + dir.y * d;
+        pos[i*3+2] = from.z + dir.z * d;
+      }
+    }
+
+    dustGeo.attributes.position.needsUpdate = true;
+  }
+
+  function createSeats() {
+    const seatMat = new THREE.MeshStandardMaterial({
+      color: 0x660000,
+      roughness: 0.78,
+      metalness: 0.06
+    });
+
+    const seatGeo = new THREE.BoxGeometry(10, 4, 10);
+    const backGeo = new THREE.BoxGeometry(10, 8, 2);
+
+    const rows = 5;
+    const cols = 10;
+    const rowSpacing = 18;
+    const colSpacing = 20;
+    const startZ = ROOM.D/2 - 92;
+    const startX = -((cols - 1) * colSpacing) / 2;
+
+    for (let r=0;r<rows;r++){
+      for (let c=0;c<cols;c++){
+        const x = startX + c*colSpacing;
+        const z = startZ - r*rowSpacing;
+
+        const seat = new THREE.Mesh(seatGeo, seatMat);
+        seat.position.set(x, 2, z);
+        seat.castShadow = true;
+        seat.receiveShadow = true;
+        add(seat);
+
+        const back = new THREE.Mesh(backGeo, seatMat);
+        back.position.set(x, 6, z - 4);
+        back.castShadow = true;
+        back.receiveShadow = true;
+        add(back);
+      }
+    }
+  }
+
+  function createAisleLights() {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffaa55 });
+    const geo = new THREE.BoxGeometry(2, 0.5, 1);
+
+    const rows = 5;
+    const rowSpacing = 18;
+    const startZ = ROOM.D/2 - 92 + 5;
+    const endZ = startZ - rows*rowSpacing - 30;
+    const xs = [-ROOM.W/4, ROOM.W/4];
+
+    for (const ax of xs) {
+      for (let z = startZ; z > endZ; z -= 6) {
+        const box = new THREE.Mesh(geo, mat);
+        box.position.set(ax, 0.5, z);
+        add(box);
+      }
+    }
+  }
+
+  function createCurtains() {
+    const curtainMat = new THREE.MeshStandardMaterial({
+      color: 0x240008,
+      roughness: 0.95,
+      metalness: 0.02
+    });
+
+    const w = ROOM.W * 0.18;
+    const h = ROOM.H * 0.78;
+    const geo = new THREE.PlaneGeometry(w, h, 10, 30);
+
+    const left = new THREE.Mesh(geo, curtainMat);
+    left.position.set(-ROOM.W*0.36, ROOM.H*0.58, ROOM.D/2 - 1.0);
+    left.rotation.y = Math.PI;
+    add(left);
+
+    const right = new THREE.Mesh(geo, curtainMat);
+    right.position.set(ROOM.W*0.36, ROOM.H*0.58, ROOM.D/2 - 1.0);
+    right.rotation.y = Math.PI;
+    add(right);
+
+    // Valance top
+    const topGeo = new THREE.PlaneGeometry(ROOM.W*0.78, ROOM.H*0.15);
+    const top = new THREE.Mesh(topGeo, curtainMat);
+    top.position.set(0, ROOM.H*0.86, ROOM.D/2 - 1.0);
+    top.rotation.y = Math.PI;
+    add(top);
+  }
+
+  function placePosters() {
+    const count = projects.length;
+    const spacing = FRAME.W + 20;
+    const totalSpan = (count - 1) * spacing;
+    const startX = -totalSpan / 2;
+
+    // Put posters high enough that jumping matters (Mario painting vibe)
+    const z = ROOM.D/2 - 18;
+    const y = ROOM.H * 0.43;
+
+    projects.forEach((project, i) => {
+      const x = startX + i*spacing;
+      createPosterPortal(x, y, z, project, { color: 0x7a4e24 });
+    });
+
+    // VIP portal (hidden until unlocked) on back wall
+    // We'll spawn it later by calling spawnVipPortal().
+  }
+
+  function spawnVipPortal() {
+    if (vipUnlocked) return;
+    vipUnlocked = true;
+
+    // Back wall (-Z), slight right side, like a “secret door”
+    const x = ROOM.W*0.28;
+    const y = ROOM.H*0.38;
+    const z = -ROOM.D/2 + 1.5;
+
+    createPosterPortal(x, y, z, vipWorld, { color: 0x1f1f28, neon: 0x66ccff, faceIntoRoom: true, isSecret: true });
+    toast("🍿 All collected… something opened on the back wall.");
+    usherMood = 2;
+    audio.sfx("unlock");
+  }
+
+  function createPosterPortal(x, y, z, project, opts={}) {
+    const frameColor = opts.color ?? 0x8b5a2b;
+    const neonColor = opts.neon ?? 0xffd36b;
+    const faceIntoRoom = (opts.faceIntoRoom ?? true);
+    const isSecret = !!opts.isSecret;
+
+    // Frame body
+    const frameGeo = new THREE.BoxGeometry(FRAME.W, FRAME.H, FRAME.D);
+    const frameMat = new THREE.MeshStandardMaterial({
+      color: frameColor,
+      roughness: 0.35,
+      metalness: 0.45
+    });
+    const frame = new THREE.Mesh(frameGeo, frameMat);
+    frame.position.set(x, y, z);
+    frame.rotation.y = faceIntoRoom ? (z > 0 ? Math.PI : 0) : 0;
+    frame.castShadow = true;
+    frame.receiveShadow = true;
+    add(frame);
+
+    // Inner poster plane
+    const posterW = FRAME.W * 0.80;
+    const posterH = FRAME.H * 0.80;
+    const posterGeo = new THREE.PlaneGeometry(posterW, posterH);
+
+    const posterTex = project.image
+      ? loadTextureOrPlaceholder(project.image, project.title)
+      : makePlaceholderPoster(project.title);
+
+    const posterMat = new THREE.MeshBasicMaterial({
+      map: posterTex,
+      side: THREE.DoubleSide
+    });
+
+    const poster = new THREE.Mesh(posterGeo, posterMat);
+    poster.position.set(0, 0, FRAME.D/2 + 0.12);
+    frame.add(poster);
+
+    // Glass sheen
+    const glassGeo = new THREE.PlaneGeometry(posterW, posterH);
+    const glassMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.08,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const glass = new THREE.Mesh(glassGeo, glassMat);
+    glass.position.set(0,0,FRAME.D/2 + 0.18);
+    frame.add(glass);
+
+    // Neon glow plate behind
+    const glowGeo = new THREE.PlaneGeometry(posterW*1.18, posterH*1.18);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: neonColor,
+      transparent: true,
+      opacity: isSecret ? 0.55 : 0.22,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.position.set(0,0,-FRAME.D/2 - 0.12);
+    frame.add(glow);
+
+    // Small point light near each poster for ambience
+    const pLight = new THREE.PointLight(neonColor, isSecret ? 120 : 55, 160);
+    pLight.position.set(x, y, z + (z > 0 ? -18 : 18));
+    scene.add(pLight);
+    worldObjects.push(pLight);
+    lights.posterPulses.push({ light: pLight, base: isSecret ? 120 : 55, seed: Math.random()*10 });
+
+    // Title plate
+    const titleTex = makeTitleTexture(project.title);
+    const aspect = titleTex.image.width / titleTex.image.height;
+    const labelH = 8;
+    const labelW = labelH * aspect;
+
+    const labelGeo = new THREE.PlaneGeometry(labelW, labelH);
+    const labelMat = new THREE.MeshBasicMaterial({ map: titleTex, transparent: true, side: THREE.DoubleSide });
+    const label = new THREE.Mesh(labelGeo, labelMat);
+    label.position.set(0, -FRAME.H/2 - labelH/2 - 4, FRAME.D/2 + 0.22);
+    frame.add(label);
+
+    // Decorative corner bolts
+    const boltGeo = new THREE.SphereGeometry(1.05, 10, 10);
+    const boltMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.3, metalness: 0.75 });
+    const bx = FRAME.W/2 - 4, by = FRAME.H/2 - 4, bz = FRAME.D/2 + 0.6;
+    for (const sx of [-1, 1]){
+      for (const sy of [-1, 1]){
+        const bolt = new THREE.Mesh(boltGeo, boltMat);
+        bolt.position.set(sx*bx, sy*by, bz);
+        frame.add(bolt);
+      }
+    }
+
+    // Precompute bounds
+    frame.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(frame);
+
+    portals.push({
+      mesh: frame,
+      bounds,
+      project,
+      glow,
+      title: project.title,
+      isSecret
+    });
+  }
+
+  function loadTextureOrPlaceholder(url, title){
+    // Try load. If it fails, we still show a clean placeholder.
+    const placeholder = makePlaceholderPoster(title);
+
+    const tex = textureLoader.load(
+      url,
+      () => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.needsUpdate = true;
+      },
+      undefined,
+      () => {
+        // On error, swap to placeholder
+        tex.dispose?.();
+      }
+    );
+
+    // In case load fails, fall back: keep placeholder if tex never becomes ready.
+    // (Three doesn’t give us a synchronous "failed" texture easily without custom manager.)
+    // So: if the image is missing, your browser console will show it, and you’ll still see something.
+    return tex || placeholder;
+  }
+
+  function makeTitleTexture(text) {
+    const c = document.createElement('canvas');
+    const ctx = c.getContext('2d');
+
+    const fontSize = 64;
+    const pad = 40;
+    ctx.font = `800 ${fontSize}px Segoe UI, Arial`;
+    const w = Math.ceil(ctx.measureText(text).width + pad*2);
+    const h = fontSize + pad*2;
+
+    c.width = w; c.height = h;
+
+    // Background plate
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.fillRect(0,0,w,h);
+
+    // Accent line
+    ctx.fillStyle = 'rgba(246,225,165,0.85)';
+    ctx.fillRect(0, h-8, w, 8);
+
+    // Text
+    ctx.font = `800 ${fontSize}px Segoe UI, Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#f6e1a5';
+    ctx.fillText(text, w/2, h/2 - 2);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  // ============================================================
+  // POPCORN COLLECTIBLES
+  // ============================================================
+
+  function spawnPopcorn() {
+    // Place around aisles & back area
+    const spots = [];
+
+    // Aisle lines
+    const aisleXs = [-ROOM.W/4, ROOM.W/4];
+    const startZ = ROOM.D/2 - 92 + 8;
+    const endZ = -ROOM.D/2 + 40;
+    for (const ax of aisleXs) {
+      for (let z = startZ; z > endZ; z -= 24) {
+        spots.push([ax + (Math.random()*8-4), 2, z + (Math.random()*8-4)]);
+      }
+    }
+
+    // Lobby scatter
+    for (let i=0;i<10;i++){
+      spots.push([ (Math.random()*ROOM.W*0.35 - ROOM.W*0.175), 2, -ROOM.D/2 + 35 + Math.random()*60 ]);
+    }
+
+    totalPopcorn = Math.min(26, spots.length);
+    popcorn = Math.min(popcorn, totalPopcorn);
+
+    // If we're reloading theater and popcorn already collected, we spawn only remaining.
+    const remaining = totalPopcorn - popcorn;
+    const spawnList = spots.slice(0, remaining);
+
+    for (const [x,y,z] of spawnList) {
+      const mesh = createPopcornMesh();
+      mesh.position.set(x,y+1.2,z);
+      mesh.castShadow = true;
+      add(mesh);
+      collectibles.push({ mesh, r: 4.0, taken:false });
+    }
+
+    setCoinsUI(popcorn, totalPopcorn);
+  }
+
+  function createPopcornMesh() {
+    const group = new THREE.Group();
+
+    const kernelGeo = new THREE.IcosahedronGeometry(1.25, 0);
+    const kernelMat = new THREE.MeshStandardMaterial({
+      color: 0xffd26a,
+      roughness: 0.65,
+      metalness: 0.05,
+      emissive: new THREE.Color(0x1b1200),
+      emissiveIntensity: 0.6
+    });
+
+    const puffGeo = new THREE.IcosahedronGeometry(1.55, 0);
+    const puffMat = new THREE.MeshStandardMaterial({
+      color: 0xfff1d9,
+      roughness: 0.92,
+      metalness: 0.02
+    });
+
+    // 3 kernels + 2 puffs
+    for (let i=0;i<3;i++){
+      const k = new THREE.Mesh(kernelGeo, kernelMat);
+      k.position.set((Math.random()*1.4-0.7), (Math.random()*0.8), (Math.random()*1.4-0.7));
+      group.add(k);
+    }
+    for (let i=0;i<2;i++){
+      const p = new THREE.Mesh(puffGeo, puffMat);
+      p.position.set((Math.random()*1.6-0.8), 0.9+(Math.random()*0.7), (Math.random()*1.6-0.8));
+      group.add(p);
+    }
+
+    // Tiny glow orb
+    const orbGeo = new THREE.SphereGeometry(0.55, 12, 12);
+    const orbMat = new THREE.MeshBasicMaterial({ color: 0xffcc66, transparent: true, opacity: 0.25 });
+    const orb = new THREE.Mesh(orbGeo, orbMat);
+    orb.position.y = 2.0;
+    group.add(orb);
+
+    return group;
+  }
+
+  function tryCollectPopcorn() {
+    if (currentWorld !== "theater") return;
+    if (!collectibles.length) return;
+
+    for (let i=collectibles.length-1;i>=0;i--){
+      const c = collectibles[i];
+      const d = c.mesh.position.distanceTo(player.position);
+      if (d < c.r) {
+        // collect
+        scene.remove(c.mesh);
+        safeDispose(c.mesh);
+        collectibles.splice(i,1);
+
+        popcorn++;
+        setCoinsUI(popcorn, totalPopcorn);
+        audio.sfx("coin");
+        toast("🍿 Popcorn collected!");
+
+        // Usher reacts
+        usherMood = Math.min(1, usherMood);
+
+        // Unlock VIP if done
+        if (popcorn >= totalPopcorn && !vipUnlocked) {
+          spawnVipPortal();
+          // screen flex
+          setScreenMessage("VIP UNLOCKED");
+        }
+      }
+    }
+  }
+
+  function setCoinsUI(count, total) {
+    elCoinCount.textContent = String(count);
+    elCoinTotal.textContent = String(total);
+  }
+
+  // ============================================================
+  // VIP WORLD
+  // ============================================================
+
+  function loadVipLounge() {
+    currentWorld = "vip";
+    elMode.textContent = "VIP Lounge";
+    teleporting = false;
+    nearestPortal = null;
+
+    clearWorld();
+
+    // Smaller room
+    const W = 260, D = 190, H = 120;
+
+    scene.fog = new THREE.Fog(0x050509, 70, 420);
+
+    // Floor (sleek)
+    const floorGeo = new THREE.PlaneGeometry(W, D);
+    const floorMat = new THREE.MeshStandardMaterial({
+      color: 0x0c0c10,
+      roughness: 0.55,
+      metalness: 0.25
+    });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI/2;
+    floor.receiveShadow = true;
+    add(floor);
+
+    // Walls
+    const wallMat = new THREE.MeshStandardMaterial({
+      color: 0x101018,
+      roughness: 0.9,
+      metalness: 0.04
+    });
+
+    const wallFront = new THREE.Mesh(new THREE.PlaneGeometry(W, H), wallMat);
+    wallFront.position.set(0, H/2, D/2);
+    wallFront.rotation.y = Math.PI;
+    add(wallFront);
+
+    const wallBack = new THREE.Mesh(new THREE.PlaneGeometry(W, H), wallMat);
+    wallBack.position.set(0, H/2, -D/2);
+    add(wallBack);
+
+    const wallSide = new THREE.Mesh(new THREE.PlaneGeometry(D, H), wallMat);
+    wallSide.position.set(-W/2, H/2, 0);
+    wallSide.rotation.y = Math.PI/2;
+    add(wallSide);
+
+    const wallSide2 = new THREE.Mesh(new THREE.PlaneGeometry(D, H), wallMat);
+    wallSide2.position.set(W/2, H/2, 0);
+    wallSide2.rotation.y = -Math.PI/2;
+    add(wallSide2);
+
+    // Ceiling
+    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({
+      color: 0x06060a, roughness: 0.95
+    }));
+    ceil.rotation.x = Math.PI/2;
+    ceil.position.y = H;
+    add(ceil);
+
+    // Lounge lighting
+    const amb = new THREE.AmbientLight(0xffffff, 0.28);
+    scene.add(amb); worldObjects.push(amb);
+
+    const neon = new THREE.PointLight(0x66ccff, 140, 400);
+    neon.position.set(0, H-18, 0);
+    scene.add(neon); worldObjects.push(neon);
+
+    const warm = new THREE.PointLight(0xffd36b, 90, 320);
+    warm.position.set(0, 20, -D/4);
+    scene.add(warm); worldObjects.push(warm);
+
+    // Trophy
+    const trophy = createTrophy();
+    trophy.position.set(0, 2, 18);
+    add(trophy);
+
+    // Disco orb
+    const orb = new THREE.Mesh(
+      new THREE.SphereGeometry(10, 20, 20),
+      new THREE.MeshStandardMaterial({ color: 0xddddff, roughness: 0.15, metalness: 0.95 })
+    );
+    orb.position.set(0, H-24, 0);
+    orb.castShadow = true;
+    add(orb);
+
+    // Portal back (Exit Door)
+    const exitProject = { title: "EXIT → Theater", description: "", image: null, link: "#theater" };
+    createPosterPortal(0, H*0.40, -D/2 + 1.2, exitProject, { color: 0x1b1b25, neon: 0xffd36b, faceIntoRoom: true, isSecret: true });
+
+    // Reset player
+    player.position.set(0, 2, -40);
+    playerVel.set(0,0,0);
+    yaw = Math.PI;
+    pitch = -0.12;
+
+    setScreenMessage("VIP LOUNGE");
+    toast("Welcome to the VIP Lounge. Press R anytime to return.");
+    audio.sfx("portal");
+  }
+
+  function createTrophy() {
+    const g = new THREE.Group();
+
+    const base = new THREE.Mesh(
+      new THREE.CylinderGeometry(14, 18, 8, 24),
+      new THREE.MeshStandardMaterial({ color: 0x17171f, roughness: 0.65, metalness: 0.25 })
+    );
+    base.position.y = 4;
+    base.castShadow = true;
+    base.receiveShadow = true;
+    g.add(base);
+
+    const cup = new THREE.Mesh(
+      new THREE.CylinderGeometry(10, 6, 18, 24),
+      new THREE.MeshStandardMaterial({ color: 0xffd36b, roughness: 0.25, metalness: 0.85, emissive: new THREE.Color(0x2a1500), emissiveIntensity: 0.7 })
+    );
+    cup.position.y = 18;
+    cup.castShadow = true;
+    g.add(cup);
+
+    const top = new THREE.Mesh(
+      new THREE.SphereGeometry(5.5, 18, 18),
+      new THREE.MeshStandardMaterial({ color: 0xfff1d9, roughness: 0.75, metalness: 0.1 })
+    );
+    top.position.y = 28;
+    top.castShadow = true;
+    g.add(top);
+
+    return g;
+  }
+
+  // ============================================================
+  // USHER BOT (tiny vibe character)
+  // ============================================================
+
+  function createUsherBot() {
+    // Simple little character near entrance
+    const g = new THREE.Group();
+
+    const body = new THREE.Mesh(
+      new THREE.SphereGeometry(4.2, 18, 18),
+      new THREE.MeshStandardMaterial({ color: 0x2b2b33, roughness: 0.6, metalness: 0.25 })
+    );
+    body.castShadow = true;
+    g.add(body);
+
+    const face = new THREE.Mesh(
+      new THREE.SphereGeometry(3.2, 18, 18),
+      new THREE.MeshStandardMaterial({ color: 0x1a1a22, roughness: 0.85, metalness: 0.05 })
+    );
+    face.position.z = 2.0;
+    g.add(face);
+
+    // Eyes
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    for (const sx of [-1, 1]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.75, 10, 10), eyeMat);
+      eye.position.set(sx*1.2, 0.6, 4.3);
+      g.add(eye);
+
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 10), pupilMat);
+      pupil.position.set(sx*1.2, 0.6, 4.9);
+      g.add(pupil);
+    }
+
+    // Tiny hat
+    const brim = new THREE.Mesh(
+      new THREE.CylinderGeometry(4.2, 4.2, 0.6, 18),
+      new THREE.MeshStandardMaterial({ color: 0x111115, roughness: 0.7, metalness: 0.15 })
+    );
+    brim.position.y = 4.2;
+    g.add(brim);
+
+    const top = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.6, 3.1, 3.2, 18),
+      new THREE.MeshStandardMaterial({ color: 0x111115, roughness: 0.7, metalness: 0.15 })
+    );
+    top.position.y = 6.2;
+    g.add(top);
+
+    // Glow badge
+    const badge = new THREE.Mesh(
+      new THREE.CircleGeometry(1.1, 16),
+      new THREE.MeshBasicMaterial({ color: 0xffd36b, transparent: true, opacity: 0.85 })
+    );
+    badge.position.set(0, -1.0, 4.15);
+    g.add(badge);
+
+    g.position.set(-ROOM.W*0.18, 6, -ROOM.D/2 + 40);
+    g.castShadow = true;
+
+    usher = g;
+    add(usher);
+  }
+
+  function updateUsher(dt) {
+    if (!usher || currentWorld !== "theater") return;
+
+    const t = performance.now()*0.001;
+    usher.position.y = 6 + Math.sin(t*1.7)*0.6;
+
+    // face the player a bit
+    const toP = player.position.clone().sub(usher.position);
+    const ang = Math.atan2(toP.x, toP.z);
+    usher.rotation.y = ang;
+
+    const dist = usher.position.distanceTo(player.position);
+
+    usherBubbleTimer -= dt;
+    if (dist < 22 && usherBubbleTimer <= 0) {
+      usherBubbleTimer = 3.5;
+
+      const lines = [];
+      if (!vipUnlocked && popcorn < totalPopcorn) {
+        lines.push("Psst… popcorn goes missing around here.");
+        lines.push("Jumping into posters is allowed. Probably.");
+        lines.push("If the theater feels… off… try old-school codes.");
+      } else if (vipUnlocked) {
+        lines.push("VIP’s open. Back wall. Don’t tell anyone.");
+        lines.push("You collected it all. Respect.");
+      }
+
+      // Pick based on mood
+      const pick = (usherMood === 2)
+        ? "VIP’s open. Back wall. Don’t tell anyone."
+        : lines[(Math.random()*lines.length)|0];
+
+      toast("🎩 Usher: " + pick);
+      audio.sfx("blip");
+    }
+  }
+
+  // ============================================================
+  // INPUT
+  // ============================================================
+
+  function onKeyDown(e){
+    const k = e.key.toLowerCase();
+
+    // Konami tracking (easter egg)
+    konamiBuf.push(k);
+    while (konamiBuf.length > konami.length) konamiBuf.shift();
+    if (konami.every((v,i)=>konamiBuf[i]===v)) {
+      toggleRainbowReel();
+      konamiBuf.length = 0;
+    }
+
+    // movement keys
+    const map = {
+      "w":"w", "a":"a", "s":"s", "d":"d",
+      "arrowup":"w", "arrowleft":"a", "arrowdown":"s", "arrowright":"d"
+    };
+    if (map[k]) keys[map[k]] = true;
+
+    if (k === "shift") keys.shift = true;
+
+    if (k === " ") {
+      jumpBuffer = JUMP_BUFFER;
+      // (actual jump happens in update so buffer/coyote feels clean)
+    }
+
+    if (k === "e") keys.e = true;
+
+    if (k === "h") {
+      elHelp.classList.toggle("show");
+    }
+
+    if (k === "m") {
+      audio.toggleMute();
+      toast(audio.muted ? "🔇 Muted" : "🔊 Audio on");
+    }
+
+    if (k === "r") {
+      if (currentWorld === "theater") loadTheater(false);
+      else loadTheater(false);
+    }
+  }
+
+  function onKeyUp(e){
+    const k = e.key.toLowerCase();
+    const map = {
+      "w":"w", "a":"a", "s":"s", "d":"d",
+      "arrowup":"w", "arrowleft":"a", "arrowdown":"s", "arrowright":"d"
+    };
+    if (map[k]) keys[map[k]] = false;
+
+    if (k === "shift") keys.shift = false;
+    if (k === "e") keys.e = false;
+  }
+
+  function onMouseDown(e){
+    isMouseDown = true;
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+  }
+  function onMouseUp(){
+    isMouseDown = false;
+  }
+  function onMouseMove(e){
+    if (!isMouseDown) return;
+
+    const dx = e.clientX - lastMouseX;
+    const dy = e.clientY - lastMouseY;
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+
+    const sens = 0.0042;
+    yaw   -= dx * sens;
+    pitch -= dy * sens;
+
+    const maxPitch = Math.PI/3;
+    const minPitch = -Math.PI/6;
+    pitch = Math.max(minPitch, Math.min(maxPitch, pitch));
+  }
+
+  // ============================================================
+  // MOVEMENT / PHYSICS / PORTALS
+  // ============================================================
+
+  function updatePlayer(dt){
+    // Jump buffer countdown
+    if (jumpBuffer > 0) jumpBuffer -= dt;
+
+    // Coyote timer
+    if (onGround) coyoteTimer = COYOTE_TIME;
+    else coyoteTimer = Math.max(0, coyoteTimer - dt);
+
+    // Movement vector relative to yaw
+    const forward = new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0), yaw).normalize();
+    const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).normalize();
+
+    const input = new THREE.Vector3();
+    if (keys.w) input.add(forward);
+    if (keys.s) input.sub(forward);
+    if (keys.a) input.sub(right);
+    if (keys.d) input.add(right);
+
+    const wantSpeed = keys.shift ? RUN_SPEED : WALK_SPEED;
+    const hasInput = input.lengthSq() > 0;
+
+    if (hasInput) {
+      input.normalize();
+      const desired = input.multiplyScalar(wantSpeed);
+
+      // Exponential smoothing toward desired velocity
+      const t = 1 - Math.exp(-ACCEL * dt);
+      playerVel.x = lerp(playerVel.x, desired.x, t);
+      playerVel.z = lerp(playerVel.z, desired.z, t);
+    } else {
+      // Friction to stop
+      const t = 1 - Math.exp(-FRICTION * dt);
+      playerVel.x = lerp(playerVel.x, 0, t);
+      playerVel.z = lerp(playerVel.z, 0, t);
+    }
+
+    // Jump handling (buffer + coyote + double jump)
+    const canGroundJump = (coyoteTimer > 0);
+    const maxJumps = rainbowMode ? 3 : 2;
+
+    if (jumpBuffer > 0) {
+      if (canGroundJump) {
+        doJump(false);
+        jumpBuffer = 0;
+      } else if (!onGround && jumpsUsed < maxJumps) {
+        doJump(true);
+        jumpBuffer = 0;
+      }
+    }
+
+    // Gravity
+    playerVel.y -= GRAVITY * dt;
+
+    // Integrate
+    player.position.x += playerVel.x * dt;
+    player.position.y += playerVel.y * dt;
+    player.position.z += playerVel.z * dt;
+
+    // Clamp inside current world
+    clampPlayerToWorld();
+
+    // Ground
+    const groundY = 2;
+    if (player.position.y <= groundY) {
+      if (!onGround && playerVel.y < -20) audio.sfx("land");
+      player.position.y = groundY;
+      playerVel.y = 0;
+      onGround = true;
+      jumpsUsed = 0;
+    } else {
+      onGround = false;
+    }
+
+    // Popcorn
+    tryCollectPopcorn();
+
+    // Portal UI + interaction
+    updateNearestPortalUI(dt);
+
+    // Enter portal with E
+    if (keys.e && nearestPortal && !teleporting) {
+      enterPortal(nearestPortal);
+    }
+
+    // Enter portal by "jumping into" it (must be airborne-ish)
+    if (!teleporting) {
+      playerBox.setFromCenterAndSize(player.position, playerSize);
+
+      for (const p of portals) {
+        // Require airborne or very recently jumped (Mario painting vibe)
+        const airborneEnough = (player.position.y > 8) || ((performance.now()*0.001 - lastJumpedAt) < 0.35);
+
+        if (airborneEnough && playerBox.intersectsBox(p.bounds)) {
+          enterPortal(p);
+          break;
+        }
+      }
+    }
+  }
+
+  function doJump(isDoubleOrMore){
+    // Different feel for first vs extra jumps
+    if (!isDoubleOrMore) {
+      playerVel.y = JUMP_V1;
+      audio.sfx("jump");
+    } else {
+      playerVel.y = JUMP_V2;
+      audio.sfx("double");
+    }
+    onGround = false;
+    jumpsUsed++;
+    coyoteTimer = 0;
+    lastJumpedAt = performance.now()*0.001;
+  }
+
+  function clampPlayerToWorld() {
+    if (currentWorld === "theater") {
+      const mx = ROOM.W/2 - 24;
+      const mz = ROOM.D/2 - 24;
+      player.position.x = Math.max(-mx, Math.min(mx, player.position.x));
+      player.position.z = Math.max(-mz, Math.min(mz, player.position.z));
+    } else {
+      // VIP room bounds approximate
+      const mx = 260/2 - 18;
+      const mz = 190/2 - 18;
+      player.position.x = Math.max(-mx, Math.min(mx, player.position.x));
+      player.position.z = Math.max(-mz, Math.min(mz, player.position.z));
+    }
+  }
+
+  function updateNearestPortalUI(dt) {
+    nearestPortal = null;
+
+    let bestD = Infinity;
+    for (const p of portals) {
+      const d = p.mesh.position.distanceTo(player.position);
+      if (d < bestD) { bestD = d; nearestPortal = p; }
+    }
+
+    // Show prompt when close enough
+    if (nearestPortal && bestD < 44 && !teleporting) {
+      elNearTitle.textContent = nearestPortal.title;
+      elNear.classList.add("show");
+
+      // Screen reflects what you're near
+      if (currentWorld === "theater") setScreenMessage(nearestPortal.title.toUpperCase());
+    } else {
+      elNear.classList.remove("show");
+      if (currentWorld === "theater") setScreenMessage("NOW SHOWING");
+    }
+  }
+
+  function enterPortal(portal) {
+    if (teleporting) return;
+    teleporting = true;
+
+    audio.sfx("portal");
+    pulsePlayerGlow(0.6);
+
+    // Cinematic fade
+    elFade.classList.add("on");
+
+    // Tiny camera punch-in
+    const startFov = camera.fov;
+    const targetFov = 58;
+
+    const t0 = performance.now();
+    const dur = 520;
+
+    const tick = () => {
+      const t = (performance.now() - t0) / dur;
+      if (t >= 1) return;
+
+      camera.fov = lerp(startFov, targetFov, easeInOut(t));
+      camera.updateProjectionMatrix();
+      requestAnimationFrame(tick);
+    };
+    tick();
+
+    // Resolve portal action
+    setTimeout(() => {
+      elFade.classList.remove("on");
+
+      if (portal.project.link === "#vip") {
+        loadVipLounge();
+        teleporting = false;
+        camera.fov = 75;
+        camera.updateProjectionMatrix();
+        return;
+      }
+      if (portal.project.link === "#theater") {
+        loadTheater(false);
+        teleporting = false;
+        camera.fov = 75;
+        camera.updateProjectionMatrix();
+        return;
+      }
+
+      // Navigate to real project page
+      window.location.href = portal.project.link;
+    }, 620);
+  }
+
+  // ============================================================
+  // CAMERA
+  // ============================================================
+
+  function updateCamera(dt){
+    // Third-person follow cam
+    const radius = (currentWorld === "vip") ? 55 : 70;
+    const offset = new THREE.Vector3(0, 18, radius);
+    offset.applyAxisAngle(new THREE.Vector3(1,0,0), pitch);
+    offset.applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
+
+    const target = player.position.clone().add(offset);
+    const t = 1 - Math.exp(-12 * dt);
+    camera.position.lerp(target, t);
+
+    const look = player.position.clone();
+    look.y += 12;
+    camera.lookAt(look);
+  }
+
+  // ============================================================
+  // EFFECTS
+  // ============================================================
+
+  function updatePosterPulses(dt) {
+    const t = performance.now()*0.001;
+    for (const p of lights.posterPulses) {
+      const w = 0.65 + 0.35*Math.sin(t*1.8 + p.seed);
+      p.light.intensity = p.base * (0.78 + 0.35*w);
+
+      if (rainbowMode) {
+        const hue = (t*0.12 + p.seed) % 1;
+        p.light.color.setHSL(hue, 0.85, 0.6);
+      }
+    }
+
+    // Theater main lights react to rainbow mode
+    if (lights.ceiling) {
+      if (rainbowMode) {
+        const hue = (t*0.08) % 1;
+        lights.ceiling.color.setHSL(hue, 0.85, 0.55);
+      } else {
+        lights.ceiling.color.setHex(0xff2a2a);
+      }
+    }
+  }
+
+  function pulsePlayerGlow(strength=0.4) {
+    const start = performance.now();
+    const dur = 340;
+    const base = rainbowMode ? 0.25 : 0.0;
+
+    const tick = () => {
+      const t = (performance.now() - start) / dur;
+      if (t >= 1) {
+        playerMat.emissive.setHex(0x000000);
+        playerMat.emissiveIntensity = 1.0;
+        return;
+      }
+      const e = Math.sin(t*Math.PI);
+      playerMat.emissive.setHex(0xffd36b);
+      playerMat.emissiveIntensity = 1.0 + base + e*strength*2.2;
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  function toggleRainbowReel() {
+    rainbowMode = !rainbowMode;
+    toast(rainbowMode ? "🌈 Rainbow Reel activated." : "🎞️ Rainbow Reel off.");
+    audio.sfx(rainbowMode ? "power" : "poweroff");
+
+    // Player color shift
+    if (rainbowMode) {
+      playerMat.color.setHex(0xb6fffa);
+      playerMat.emissive.setHex(0x2244ff);
+      playerMat.emissiveIntensity = 1.7;
+    } else {
+      playerMat.color.setHex(0xff6666);
+      playerMat.emissive.setHex(0x000000);
+      playerMat.emissiveIntensity = 1.0;
+    }
+  }
+
+  // ============================================================
+  // AUDIO (procedural)
+  // ============================================================
+
+  function createAudioEngine(){
+    let ctx = null;
+    let master = null;
+    let humOsc = null;
+    let humGain = null;
+    let noiseSrc = null;
+    let noiseGain = null;
+    let unlocked = false;
+    let muted = false;
+
+    function unlock() {
+      if (unlocked) return;
+      unlocked = true;
+
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      master = ctx.createGain();
+      master.gain.value = 0.35;
+      master.connect(ctx.destination);
+
+      // Projector hum
+      humOsc = ctx.createOscillator();
+      humOsc.type = "sawtooth";
+      humOsc.frequency.value = 54;
+
+      humGain = ctx.createGain();
+      humGain.gain.value = 0.0;
+
+      const humFilter = ctx.createBiquadFilter();
+      humFilter.type = "lowpass";
+      humFilter.frequency.value = 180;
+
+      humOsc.connect(humFilter);
+      humFilter.connect(humGain);
+      humGain.connect(master);
+      humOsc.start();
+
+      // Soft noise (film/projector texture)
+      noiseSrc = makeNoise(ctx);
+      noiseGain = ctx.createGain();
+      noiseGain.gain.value = 0.0;
+
+      const nFilter = ctx.createBiquadFilter();
+      nFilter.type = "bandpass";
+      nFilter.frequency.value = 1200;
+      nFilter.Q.value = 0.6;
+
+      noiseSrc.connect(nFilter);
+      nFilter.connect(noiseGain);
+      noiseGain.connect(master);
+      noiseSrc.start();
+
+      // start audible quickly
+      setTimeout(()=>{ if (!muted) { humGain.gain.value = 0.05; noiseGain.gain.value = 0.02; } }, 60);
+    }
+
+    function makeNoise(ctx){
+      const bufferSize = 2 * ctx.sampleRate;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i=0;i<bufferSize;i++){
+        data[i] = (Math.random()*2 - 1) * 0.25;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.loop = true;
+      return src;
+    }
+
+    function update(playerPos){
+      if (!ctx || !humGain || !noiseGain) return;
+
+      // Hum gets louder near projector (in theater only)
+      if (currentWorld !== "theater") {
+        humGain.gain.value = muted ? 0 : 0.02;
+        noiseGain.gain.value = muted ? 0 : 0.01;
+        return;
+      }
+
+      const d = playerPos.distanceTo(projectorPos);
+      const near = clamp01(1 - (d / 220));
+      const vol = 0.02 + near*0.08;
+
+      humGain.gain.value = muted ? 0 : vol;
+      noiseGain.gain.value = muted ? 0 : (0.01 + near*0.02);
+    }
+
+    function sfx(kind){
+      if (!ctx || muted) return;
+
+      const t = ctx.currentTime;
+
+      // helper
+      const ping = (freq, dur, type="sine", gain=0.12) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = type;
+        o.frequency.setValueAtTime(freq, t);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(gain, t+0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+        o.connect(g); g.connect(master);
+        o.start(t);
+        o.stop(t+dur+0.02);
+      };
+
+      switch(kind){
+        case "jump": ping(420, 0.10, "triangle", 0.12); break;
+        case "double": ping(620, 0.10, "triangle", 0.12); ping(860, 0.08, "sine", 0.07); break;
+        case "land": ping(140, 0.09, "square", 0.05); break;
+        case "coin": ping(880, 0.08, "sine", 0.11); ping(1320, 0.06, "sine", 0.07); break;
+        case "portal": ping(220, 0.22, "sawtooth", 0.10); ping(520, 0.22, "sine", 0.08); break;
+        case "unlock": ping(330, 0.18, "triangle", 0.12); ping(990, 0.16, "sine", 0.09); break;
+        case "power": ping(260, 0.28, "sawtooth", 0.10); ping(920, 0.20, "sine", 0.08); break;
+        case "poweroff": ping(220, 0.18, "triangle", 0.08); break;
+        case "blip": ping(520, 0.07, "sine", 0.08); break;
+      }
+    }
+
+    function toggleMute(){
+      muted = !muted;
+      if (master) master.gain.value = muted ? 0.0 : 0.35;
+    }
+
+    return {
+      unlock,
+      update,
+      sfx,
+      toggleMute,
+      get muted(){ return muted; }
+    };
+  }
+
+  // ============================================================
+  // ANIMATE LOOP
+  // ============================================================
+
+  function animate(){
+    requestAnimationFrame(animate);
+
+    const dt = Math.min(clock.getDelta(), 0.033);
+
+    updatePlayer(dt);
+    updateCamera(dt);
+    updateScreen(dt);
+    updateDust(dt);
+    updatePosterPulses(dt);
+    updateUsher(dt);
+
+    audio.update(player.position);
+
+    renderer.render(scene, camera);
+  }
+
+  // ============================================================
+  // UTIL
+  // ============================================================
+
+  function onWindowResize(){
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  }
+
+  function toast(msg){
+    elToast.textContent = msg;
+    elToast.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => elToast.classList.remove("show"), 2600);
+  }
+
+  function lerp(a,b,t){ return a + (b-a)*t; }
+  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+  function easeInOut(t){ return t<0.5 ? 2*t*t : 1 - Math.pow(-2*t+2,2)/2; }
+
+</script>
+</body>
+</html>
+
+
+

@@ -60,9 +60,15 @@ export class Collision {
 
                 const diff = center.clone().sub(colliderCenter);
 
-                // Find the axis with smallest overlap
+                // Find the axis with smallest overlap — include Y so top/bottom
+                // collisions are detected and left for checkGround instead of
+                // being incorrectly resolved as a sideways push-out.
                 const overlapX = (c.box.max.x - c.box.min.x) / 2 + radius - Math.abs(diff.x);
+                const overlapY = (c.box.max.y - c.box.min.y) / 2 + radius - Math.abs(diff.y);
                 const overlapZ = (c.box.max.z - c.box.min.z) / 2 + radius - Math.abs(diff.z);
+
+                // Y overlap is smallest → this is a landing/ceiling collision; skip
+                if (overlapY <= overlapX && overlapY <= overlapZ) continue;
 
                 if (overlapX < overlapZ) {
                     pushOut.x += Math.sign(diff.x) * overlapX;
