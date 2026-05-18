@@ -52,7 +52,7 @@ export class ExteriorScene {
     buildTicketNPC() {
         const loader = new FBXLoader();
         loader.load('../Animated Men Characters - Feb 2019/FBX/Male_Suit.fbx', (fbx) => {
-            fbx.scale.setScalar(0.00625);
+            fbx.scale.setScalar(0.0125);
             fbx.position.set(12, 0, -2.2); // inside booth, behind window
             fbx.rotation.y = Math.PI; // face toward player (+Z)
             fbx.traverse(child => {

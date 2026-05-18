@@ -44,7 +44,7 @@ export class Player {
     _loadCharacterModel() {
         const loader = new FBXLoader();
         loader.load('../Animated Men Characters - Feb 2019/FBX/Male_Casual.fbx', (fbx) => {
-            fbx.scale.setScalar(0.00625);
+            fbx.scale.setScalar(0.0125);
             fbx.traverse(child => {
                 if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
             });

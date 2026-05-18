@@ -620,7 +620,7 @@ export class LobbyScene {
     buildCheckInNPC() {
         const loader = new FBXLoader();
         loader.load('../Animated Men Characters - Feb 2019/FBX/Smooth_Male_Casual.fbx', (fbx) => {
-            fbx.scale.setScalar(0.00625);
+            fbx.scale.setScalar(0.0125);
             fbx.position.set(-20, 0, -2); // left side of lobby, near the arcade corner
             fbx.rotation.y = -Math.PI / 2; // face +X toward lobby center
             fbx.traverse(child => {
@@ -647,7 +647,7 @@ export class LobbyScene {
         // NPC behind the real ticket counter (the one at x=-20)
         const loader = new FBXLoader();
         loader.load('../Animated Men Characters - Feb 2019/FBX/Male_Suit.fbx', (fbx) => {
-            fbx.scale.setScalar(0.00625);
+            fbx.scale.setScalar(0.0125);
             fbx.position.set(-20, 0, 14.5); // standing on floor, behind counter (back face z=13.5)
             fbx.rotation.y = 0; // face -Z toward approaching player
             fbx.traverse(child => {
@@ -692,7 +692,7 @@ export class LobbyScene {
     buildSofaNPC() {
         const loader = new FBXLoader();
         loader.load('Sitting Laughing.fbx', (fbx) => {
-            fbx.scale.setScalar(0.00625); // Match world scale (proportional to player/counter)
+            fbx.scale.setScalar(0.0125); // Match world scale (proportional to player/counter)
             fbx.position.set(13, 1.1, -5); // butt on seat top (seat top at y=1.1)
             fbx.rotation.y = Math.PI / 2; // face away from sofa back (+X direction)
             fbx.traverse(child => {
