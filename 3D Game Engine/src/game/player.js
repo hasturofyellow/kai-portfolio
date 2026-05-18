@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { Input } from '../input.js';
 import { Collision } from './collision.js';
 
@@ -6,9 +7,13 @@ export class Player {
     constructor(scene) {
         this.scene = scene;
 
-        // Create player mesh
-        this.mesh = this.createPlayerMesh();
+        // Physics anchor group — FBX model is added as a child once loaded
+        this.mesh = new THREE.Group();
+        this.mesh.position.y = 1;
         this.scene.add(this.mesh);
+        this.mixer = null;
+
+        this._loadCharacterModel();
 
         // Physics
         this.velocity = new THREE.Vector3();
@@ -36,44 +41,37 @@ export class Player {
         this.cameraPitch = 0.3;
     }
 
-    createPlayerMesh() {
-        const group = new THREE.Group();
+    _loadCharacterModel() {
+        const loader = new FBXLoader();
+        loader.load('../Animated Men Characters - Feb 2019/FBX/Male_Casual.fbx', (fbx) => {
+            fbx.scale.setScalar(0.00625);
+            fbx.traverse(child => {
+                if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
+            });
+            this.mesh.add(fbx);
+            if (fbx.animations?.length > 0) {
+                this.mixer = new THREE.AnimationMixer(fbx);
+                this.mixer.clipAction(fbx.animations[0]).play();
+            }
+        }, undefined, () => this._createFallbackMesh());
+    }
 
-        // Body
-        const bodyGeo = new THREE.CylinderGeometry(0.4, 0.4, 1, 16);
-        const bodyMat = new THREE.MeshStandardMaterial({
-            color: 0xff6666,
-            roughness: 0.35,
-            metalness: 0.15
-        });
-        const body = new THREE.Mesh(bodyGeo, bodyMat);
+    _createFallbackMesh() {
+        const body = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.4, 0.4, 1, 16),
+            new THREE.MeshStandardMaterial({ color: 0xff6666, roughness: 0.35, metalness: 0.15 })
+        );
         body.position.y = 0.5;
         body.castShadow = true;
-        group.add(body);
+        this.mesh.add(body);
 
-        // Head
-        const headGeo = new THREE.SphereGeometry(0.35, 16, 16);
-        const headMat = new THREE.MeshStandardMaterial({ color: 0xffcc99 });
-        const head = new THREE.Mesh(headGeo, headMat);
+        const head = new THREE.Mesh(
+            new THREE.SphereGeometry(0.35, 16, 16),
+            new THREE.MeshStandardMaterial({ color: 0xffcc99 })
+        );
         head.position.y = 1.2;
         head.castShadow = true;
-        group.add(head);
-
-        // Eyes
-        const eyeGeo = new THREE.SphereGeometry(0.08, 8, 8);
-        const eyeMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
-
-        const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
-        leftEye.position.set(-0.12, 1.25, 0.28);
-        group.add(leftEye);
-
-        const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
-        rightEye.position.set(0.12, 1.25, 0.28);
-        group.add(rightEye);
-
-        group.position.y = 1;
-
-        return group;
+        this.mesh.add(head);
     }
 
     setPosition(x, y, z) {
@@ -82,6 +80,8 @@ export class Player {
     }
 
     update(dt) {
+        if (this.mixer) this.mixer.update(dt);
+
         // Camera rotation from mouse
         if (Input.mouse.locked) {
             this.cameraYaw -= Input.mouse.dx * 0.002;

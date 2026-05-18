@@ -51,8 +51,8 @@ export class ExteriorScene {
 
     buildTicketNPC() {
         const loader = new FBXLoader();
-        loader.load('Old Man Idle.fbx', (fbx) => {
-            fbx.scale.setScalar(0.018); // Mixamo exports in cm
+        loader.load('../Animated Men Characters - Feb 2019/FBX/Male_Suit.fbx', (fbx) => {
+            fbx.scale.setScalar(0.00625);
             fbx.position.set(12, 0, -2.2); // inside booth, behind window
             fbx.rotation.y = Math.PI; // face toward player (+Z)
             fbx.traverse(child => {
@@ -64,7 +64,7 @@ export class ExteriorScene {
                 this.npcMixer = new THREE.AnimationMixer(fbx);
                 this.npcMixer.clipAction(fbx.animations[0]).play();
             }
-        }, undefined, (err) => console.warn('Old Man Idle.fbx failed to load:', err));
+        }, undefined, (err) => console.warn('Male_Suit.fbx (exterior NPC) failed to load:', err));
 
         // Interaction trigger in front of the booth window
         const trigger = new THREE.Mesh(new THREE.BoxGeometry(3, 4, 3));
