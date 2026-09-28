@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { Collision } from '../collision.js';
+import { disposeOwnedObjects } from '../sceneResources.js';
 
 export class LavaCaveScene {
     constructor(scene) {
         this.scene = scene;
+        this.disposed = false;
         this.objects = [];
         this.lights = [];
         this.moneyStacks = [];
@@ -351,26 +353,17 @@ export class LavaCaveScene {
     }
 
     dispose() {
-        for (const obj of this.objects) {
-            this.scene.remove(obj);
-            if (obj.geometry) obj.geometry.dispose();
-            if (obj.material) {
-                if (Array.isArray(obj.material)) {
-                    obj.material.forEach(m => m.dispose());
-                } else {
-                    obj.material.dispose();
-                }
-            }
-        }
-
-        for (const light of this.lights) {
-            this.scene.remove(light);
-        }
-
+        if (this.disposed) return;
+        this.disposed = true;
+        disposeOwnedObjects(this.scene, [...this.objects, ...this.lights]);
+        Collision.clear();
         this.objects = [];
         this.lights = [];
+        this.moneyStacks = [];
         this.lavaLight = null;
         this.lavaMesh = null;
         this.portalMesh = null;
+        this.exitTrigger = null;
+        this.portalTrigger = null;
     }
 }

@@ -82,8 +82,8 @@ export class Player {
     update(dt) {
         if (this.mixer) this.mixer.update(dt);
 
-        // Camera rotation from mouse
-        if (Input.mouse.locked) {
+        // Input accumulates camera movement during a drag or optional pointer lock.
+        if (Input.enabled) {
             this.cameraYaw -= Input.mouse.dx * 0.002;
             this.cameraPitch -= Input.mouse.dy * 0.002;
             this.cameraPitch = Math.max(-0.5, Math.min(1.2, this.cameraPitch));

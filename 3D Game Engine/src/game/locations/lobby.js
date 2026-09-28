@@ -1,27 +1,25 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { Collision } from '../collision.js';
+import { disposeOwnedObjects } from '../sceneResources.js';
 
-// Refined color palette - Deep blue as PRIMARY grounding color
+// Slate architecture and restrained brass/teal accents frame the program.
 const COLORS = {
-    // PRIMARY: Deep Electric Blue - for walls, architecture, grounding
-    primary: 0x060885,
-    // SECONDARY: Hot Magenta - for signage, branding, LED edges
-    secondary: 0xdf3f8b,
-    // TERTIARY: Neon Cyan - for floor strips, glow effects, directional
-    tertiary: 0x00caeb,
-    // POP: Neon Mint - use sparingly for VIP, arcade, special highlights
-    pop: 0x55fc77,
+    primary: 0x293b48,
+    secondary: 0xc8ab78,
+    tertiary: 0x6ea6ad,
+    pop: 0x9fcab0,
     // Backgrounds and surfaces
-    dark: 0x020210,
-    darkSurface: 0x040420,
-    darkPanel: 0x050530,
+    dark: 0x0b1118,
+    darkSurface: 0x18232c,
+    darkPanel: 0x202e38,
     white: 0xffffff
 };
 
 export class LobbyScene {
     constructor(scene) {
         this.scene = scene;
+        this.disposed = false;
         this.objects = [];
         this.lights = [];
         this.sofaMixer = null;
@@ -51,41 +49,41 @@ export class LobbyScene {
     }
 
     setupLighting() {
-        // Bright blue-white ambient - lobby is more open than the theater, keep it bright
-        const ambient = new THREE.AmbientLight(0x8899ff, 1.8);
+        // Warm-neutral light preserves readable surfaces and natural character colors.
+        const ambient = new THREE.AmbientLight(0xede8dd, 1.6);
         this.scene.add(ambient);
         this.lights.push(ambient);
 
-        // Hemisphere - bright blue from above, subtle warm ground bounce
-        const hemiLight = new THREE.HemisphereLight(0x4488ff, 0x221100, 1.2);
+        // Soft daylight above, warm ground bounce below
+        const hemiLight = new THREE.HemisphereLight(0xb8cad5, 0x443a30, 0.9);
         this.scene.add(hemiLight);
         this.lights.push(hemiLight);
 
         // Central chandelier light
-        const chandelierLight = new THREE.PointLight(0xffeeff, 15, 55);
+        const chandelierLight = new THREE.PointLight(0xffebca, 12, 55);
         chandelierLight.position.set(0, 14, 0);
         chandelierLight.castShadow = true;
         this.scene.add(chandelierLight);
         this.lights.push(chandelierLight);
 
         // Chandelier secondary fill - lower position reaches the floor better
-        const chandelierFill = new THREE.PointLight(0xffeeff, 8, 30);
+        const chandelierFill = new THREE.PointLight(0xffebca, 7, 30);
         chandelierFill.position.set(0, 5, 0);
         this.scene.add(chandelierFill);
         this.lights.push(chandelierFill);
 
-        // Magenta accent wash from chandelier
-        const chandelierMagenta = new THREE.PointLight(COLORS.secondary, 5, 40);
-        chandelierMagenta.position.set(0, 16, 0);
-        this.scene.add(chandelierMagenta);
-        this.lights.push(chandelierMagenta);
+        // Subtle brass accent wash from chandelier
+        const chandelierAccent = new THREE.PointLight(COLORS.secondary, 2.5, 40);
+        chandelierAccent.position.set(0, 16, 0);
+        this.scene.add(chandelierAccent);
+        this.lights.push(chandelierAccent);
 
         // Quadrant overhead fill lights - lowered from y=12 to y=7 for better floor coverage
         [
             { x: -18, z: -12 }, { x: 18, z: -12 },
             { x: -18, z:  12 }, { x: 18, z:  12 }
         ].forEach(pos => {
-            const fill = new THREE.PointLight(0xffeeff, 8, 35);
+            const fill = new THREE.PointLight(0xe8e3d9, 7, 35);
             fill.position.set(pos.x, 7, pos.z);
             this.scene.add(fill);
             this.lights.push(fill);
@@ -102,7 +100,7 @@ export class LobbyScene {
         ];
 
         wallLightPositions.forEach(pos => {
-            const light = new THREE.PointLight(COLORS.tertiary, 4, 25);
+            const light = new THREE.PointLight(COLORS.tertiary, 2.5, 25);
             light.position.set(pos.x, 8, pos.z);
             this.scene.add(light);
             this.lights.push(light);
@@ -117,11 +115,11 @@ export class LobbyScene {
         // Dark reflective floor
         const floorGeo = new THREE.PlaneGeometry(60, 50);
         const floorMat = new THREE.MeshStandardMaterial({
-            color: 0x2e2c52,
-            roughness: 0.12,
-            metalness: 0.8,
-            emissive: 0x0c0a38,
-            emissiveIntensity: 0.3
+            color: 0x29343b,
+            roughness: 0.38,
+            metalness: 0.35,
+            emissive: 0x10171b,
+            emissiveIntensity: 0.1
         });
         const floor = new THREE.Mesh(floorGeo, floorMat);
         floor.rotation.x = -Math.PI / 2;
@@ -281,7 +279,7 @@ export class LobbyScene {
     buildCeiling() {
         // Dark ceiling
         const ceilingMat = new THREE.MeshStandardMaterial({
-            color: 0x0d0d28,
+            color: 0x17212a,
             roughness: 0.85,
             metalness: 0.1
         });
@@ -297,7 +295,7 @@ export class LobbyScene {
     }
 
     buildColumns() {
-        // Deep blue columns (primary - architecture)
+        // Slate columns
         const columnMat = new THREE.MeshStandardMaterial({
             color: COLORS.primary,
             roughness: 0.35,
@@ -321,7 +319,7 @@ export class LobbyScene {
             this.objects.push(column);
             Collision.addCollider(column);
 
-            // Magenta LED strip on column (secondary - LED edges)
+            // Warm LED strip on column
             const ledGeo = new THREE.BoxGeometry(0.06, 12, 0.06);
             const ledMat = new THREE.MeshBasicMaterial({ color: COLORS.secondary });
             const led = new THREE.Mesh(ledGeo, ledMat);
@@ -620,6 +618,10 @@ export class LobbyScene {
     buildCheckInNPC() {
         const loader = new FBXLoader();
         loader.load('../Animated Men Characters - Feb 2019/FBX/Smooth_Male_Casual.fbx', (fbx) => {
+            if (this.disposed) {
+                disposeOwnedObjects(this.scene, [fbx]);
+                return;
+            }
             fbx.scale.setScalar(0.0125);
             fbx.position.set(-20, 0, -2); // left side of lobby, near the arcade corner
             fbx.rotation.y = -Math.PI / 2; // face +X toward lobby center
@@ -632,7 +634,9 @@ export class LobbyScene {
                 this.npcMixer = new THREE.AnimationMixer(fbx);
                 this.npcMixer.clipAction(fbx.animations[0]).play();
             }
-        }, undefined, (err) => console.warn('Smooth_Male_Casual.fbx failed to load:', err));
+        }, undefined, (err) => {
+            if (!this.disposed) console.warn('Smooth_Male_Casual.fbx failed to load:', err);
+        });
 
         // Interaction trigger zone around the clerk near the arcade
         const trigger = new THREE.Mesh(new THREE.BoxGeometry(8, 6, 6));
@@ -647,6 +651,10 @@ export class LobbyScene {
         // NPC behind the real ticket counter (the one at x=-20)
         const loader = new FBXLoader();
         loader.load('../Animated Men Characters - Feb 2019/FBX/Male_Suit.fbx', (fbx) => {
+            if (this.disposed) {
+                disposeOwnedObjects(this.scene, [fbx]);
+                return;
+            }
             fbx.scale.setScalar(0.0125);
             fbx.position.set(-20, 0, 14.5); // standing on floor, behind counter (back face z=13.5)
             fbx.rotation.y = 0; // face -Z toward approaching player
@@ -659,7 +667,9 @@ export class LobbyScene {
                 this.ticketNpcMixer = new THREE.AnimationMixer(fbx);
                 this.ticketNpcMixer.clipAction(fbx.animations[0]).play();
             }
-        }, undefined, (err) => console.warn('Male_Suit.fbx (ticket NPC) failed to load:', err));
+        }, undefined, (err) => {
+            if (!this.disposed) console.warn('Male_Suit.fbx (ticket NPC) failed to load:', err);
+        });
     }
 
     buildLoungeArea() {
@@ -692,6 +702,10 @@ export class LobbyScene {
     buildSofaNPC() {
         const loader = new FBXLoader();
         loader.load('Sitting Laughing.fbx', (fbx) => {
+            if (this.disposed) {
+                disposeOwnedObjects(this.scene, [fbx]);
+                return;
+            }
             fbx.scale.setScalar(0.0125); // Match world scale (proportional to player/counter)
             fbx.position.set(13, 1.1, -5); // butt on seat top (seat top at y=1.1)
             fbx.rotation.y = Math.PI / 2; // face away from sofa back (+X direction)
@@ -707,13 +721,15 @@ export class LobbyScene {
                 this.sofaMixer = new THREE.AnimationMixer(fbx);
                 this.sofaMixer.clipAction(fbx.animations[0]).play();
             }
+        }, undefined, (err) => {
+            if (!this.disposed) console.warn('Sitting Laughing.fbx failed to load:', err);
         });
     }
 
     buildSofa(x, z, rotation) {
         // Dark base
         const baseMat = new THREE.MeshStandardMaterial({
-            color: 0x16143a,
+            color: 0x25323c,
             roughness: 0.5,
             metalness: 0.2
         });
@@ -823,10 +839,10 @@ export class LobbyScene {
 
     buildHallways() {
         const hallwayData = [
-            { x: -30, z: -15, name: 'THEATER 3', color: COLORS.secondary },
-            { x: 30, z: -15, name: 'THEATER 4', color: COLORS.secondary },
-            { x: -30, z: 15, name: 'AGE OF WAR', color: COLORS.pop },  // Pop for featured game
-            { x: 30, z: 15, name: 'THEATER 2', color: COLORS.secondary }
+            { x: -30, z: -15, name: '03 / STICK SOCCER', color: 0x44ff88 },
+            { x: 30, z: -15, name: '04 / SNAKE GAME', color: 0x55fc77 },
+            { x: -30, z: 15, name: '01 / AGE OF WAR', color: 0xff6644 },
+            { x: 30, z: 15, name: '02 / BLAST BLOCK', color: 0x44aaff }
         ];
 
         hallwayData.forEach(data => {
@@ -876,10 +892,10 @@ export class LobbyScene {
         canvas.height = 128;
         const ctx = canvas.getContext('2d');
         const hexColor = '#' + color.toString(16).padStart(6, '0');
-        ctx.fillStyle = hexColor;
+        ctx.fillStyle = '#111a21';
         ctx.fillRect(0, 0, 512, 128);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 56px Arial, sans-serif';
+        ctx.fillStyle = hexColor;
+        ctx.font = 'bold 38px Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(name, 256, 64);
@@ -1041,7 +1057,7 @@ export class LobbyScene {
             this.scene.add(leftSconce);
             this.objects.push(leftSconce);
 
-            // Right wall — magenta
+            // Right wall — brass
             const rightSconce = new THREE.Mesh(
                 new THREE.BoxGeometry(0.06, 0.5, 1.4),
                 new THREE.MeshBasicMaterial({ color: COLORS.secondary, transparent: true, opacity: 0.9 })
@@ -1052,23 +1068,23 @@ export class LobbyScene {
         });
 
         // One PointLight per side — low height means low attenuation to floor
-        const leftFill = new THREE.PointLight(COLORS.tertiary, 5, 28);
+        const leftFill = new THREE.PointLight(COLORS.tertiary, 2.8, 28);
         leftFill.position.set(-26, 3.5, 0);
         this.scene.add(leftFill);
         this.lights.push(leftFill);
 
-        const rightFill = new THREE.PointLight(COLORS.secondary, 5, 28);
+        const rightFill = new THREE.PointLight(COLORS.secondary, 2.8, 28);
         rightFill.position.set(26, 3.5, 0);
         this.scene.add(rightFill);
         this.lights.push(rightFill);
 
         // Front and back wall sconces to cover depth
-        const frontFill = new THREE.PointLight(COLORS.tertiary, 4, 25);
+        const frontFill = new THREE.PointLight(COLORS.tertiary, 2.5, 25);
         frontFill.position.set(0, 3.5, 22);
         this.scene.add(frontFill);
         this.lights.push(frontFill);
 
-        const backFill = new THREE.PointLight(COLORS.secondary, 4, 25);
+        const backFill = new THREE.PointLight(COLORS.secondary, 2.5, 25);
         backFill.position.set(0, 3.5, -22);
         this.scene.add(backFill);
         this.lights.push(backFill);
@@ -1078,6 +1094,7 @@ export class LobbyScene {
         const triggerBox = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 3));
         triggerBox.position.set(0, 4, 24);
         triggerBox.visible = false;
+        this.objects.push(triggerBox);
         Collision.addTrigger(triggerBox, callback, 'lobby-entrance');
     }
 
@@ -1085,6 +1102,7 @@ export class LobbyScene {
         const triggerBox = new THREE.Mesh(new THREE.BoxGeometry(6, 8, 4));
         triggerBox.position.set(-27, 4, 15);
         triggerBox.visible = false;
+        this.objects.push(triggerBox);
         Collision.addTrigger(triggerBox, callback, 'theater-1-entrance');
     }
 
@@ -1092,6 +1110,7 @@ export class LobbyScene {
         const triggerBox = new THREE.Mesh(new THREE.BoxGeometry(6, 8, 4));
         triggerBox.position.set(27, 4, 15);
         triggerBox.visible = false;
+        this.objects.push(triggerBox);
         Collision.addTrigger(triggerBox, callback, 'theater-2-entrance');
     }
 
@@ -1099,6 +1118,7 @@ export class LobbyScene {
         const triggerBox = new THREE.Mesh(new THREE.BoxGeometry(6, 8, 4));
         triggerBox.position.set(-27, 4, -15);
         triggerBox.visible = false;
+        this.objects.push(triggerBox);
         Collision.addTrigger(triggerBox, callback, 'theater-3-entrance');
     }
 
@@ -1106,6 +1126,7 @@ export class LobbyScene {
         const triggerBox = new THREE.Mesh(new THREE.BoxGeometry(6, 8, 4));
         triggerBox.position.set(27, 4, -15);
         triggerBox.visible = false;
+        this.objects.push(triggerBox);
         Collision.addTrigger(triggerBox, callback, 'theater-4-entrance');
     }
 
@@ -1187,26 +1208,24 @@ export class LobbyScene {
     }
 
     dispose() {
-        this.objects.forEach(obj => {
-            if (obj.geometry) obj.geometry.dispose();
-            if (obj.material) {
-                if (Array.isArray(obj.material)) {
-                    obj.material.forEach(m => m.dispose());
-                } else {
-                    obj.material.dispose();
-                }
-            }
-            this.scene.remove(obj);
-        });
-
-        this.lights.forEach(light => this.scene.remove(light));
-
-        if (this.sofaMixer) {
-            this.sofaMixer.stopAllAction();
-            this.sofaMixer = null;
-        }
-
+        if (this.disposed) return;
+        this.disposed = true;
+        disposeOwnedObjects(this.scene, [...this.objects, ...this.lights], [
+            this.sofaMixer, this.npcMixer, this.ticketNpcMixer
+        ]);
+        Collision.clear();
         this.objects = [];
         this.lights = [];
+        this.sofaMixer = null;
+        this.npcMixer = null;
+        this.ticketNpcMixer = null;
+        this.checkInTrigger = null;
+        this.fountainWater = null;
+        this.eyeGroup = null;
+        this.eyeIris = null;
+        this.eyePupil = null;
+        this.chandelierRing1 = null;
+        this.chandelierRing2 = null;
+        this.chandelierRing3 = null;
     }
 }

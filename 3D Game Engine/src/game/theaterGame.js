@@ -10,6 +10,8 @@ import { ExteriorScene } from './locations/exterior.js';
 import { LobbyScene } from './locations/lobby.js';
 import { TheaterRoomScene } from './locations/theaterRoom.js';
 import { LavaCaveScene } from './locations/lavaCaveScene.js';
+import { getProgramEntry } from './program.js';
+import { CinemaUI } from '../ui/cinemaUI.js';
 
 export class TheaterGame {
     constructor() {
@@ -39,6 +41,7 @@ export class TheaterGame {
         this.tickets = 0;
         this.collectedBills = new Set();
         this.metGerald = false;
+        this.updateWalletUI();
 
         // Sitting state
         this.isSitting = false;
@@ -54,6 +57,11 @@ export class TheaterGame {
 
         // Load starting location
         this.loadLocation('exterior');
+        this.setQuality('balanced');
+        this.interface.open('welcome');
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && !this.menuOpen) this.interface.open('controls');
+        });
 
         // Handle window resize
         window.addEventListener('resize', () => this.onResize());
@@ -81,6 +89,7 @@ export class TheaterGame {
         this.renderer.toneMappingExposure = 1.4; // Brighter exposure
 
         document.body.appendChild(this.renderer.domElement);
+        this.renderer.domElement.setAttribute('aria-label', '3D cinema. Use WASD to move, drag to look, and Escape for controls.');
     }
 
     setupComposer() {
@@ -88,9 +97,9 @@ export class TheaterGame {
         this.composer.addPass(new RenderPass(this.scene, this.camera));
         this.bloomPass = new UnrealBloomPass(
             new THREE.Vector2(window.innerWidth, window.innerHeight),
-            0.8,   // strength
+            0.45,  // strength
             0.4,   // radius
-            0.15   // threshold — low so all neon blooms
+            0.65   // threshold — keep signs crisp
         );
         this.composer.addPass(this.bloomPass);
     }
@@ -111,7 +120,7 @@ export class TheaterGame {
         this.cameraSmoothing = 0.08;  // Lower = smoother
         this.cameraDistance = 10;
         this.cameraHeight = 4;
-        this.cameraTargetOffset = new THREE.Vector3(0, 1.5, 0);
+        this.cameraTargetOffset = new THREE.Vector3(0, 2.5, 0);
 
         // Current camera position (for smoothing)
         this.cameraCurrentPos = new THREE.Vector3();
@@ -120,230 +129,7 @@ export class TheaterGame {
     }
 
     setupUI() {
-        // Create UI overlay
-        const ui = document.createElement('div');
-        ui.id = 'game-ui';
-        ui.innerHTML = `
-            <style>
-                #game-ui {
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    pointer-events: none;
-                    font-family: 'Segoe UI', system-ui, sans-serif;
-                    z-index: 100;
-                }
-                #game-ui * {
-                    pointer-events: auto;
-                }
-                #topbar {
-                    position: absolute;
-                    top: 16px;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    background: rgba(0,0,0,0.7);
-                    color: white;
-                    padding: 12px 24px;
-                    border-radius: 12px;
-                    text-align: center;
-                    backdrop-filter: blur(10px);
-                }
-                #topbar h1 {
-                    margin: 0 0 4px 0;
-                    font-size: 18px;
-                    color: #ffd700;
-                }
-                #topbar p {
-                    margin: 0;
-                    font-size: 12px;
-                    opacity: 0.8;
-                }
-                #location {
-                    position: absolute;
-                    top: 16px;
-                    right: 16px;
-                    background: rgba(0,0,0,0.6);
-                    color: #88ccff;
-                    padding: 8px 14px;
-                    border-radius: 8px;
-                    font-size: 13px;
-                }
-                #hint {
-                    position: absolute;
-                    bottom: 20px;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    background: rgba(0,0,0,0.75);
-                    color: #ffd700;
-                    padding: 10px 20px;
-                    border-radius: 20px;
-                    font-size: 14px;
-                    opacity: 0;
-                    transition: opacity 0.3s;
-                }
-                #hint.show {
-                    opacity: 1;
-                }
-                #currency {
-                    position: absolute;
-                    bottom: 20px;
-                    left: 20px;
-                    background: rgba(0,0,0,0.65);
-                    color: #ffd700;
-                    padding: 8px 16px;
-                    border-radius: 10px;
-                    font-size: 15px;
-                    font-weight: bold;
-                    backdrop-filter: blur(8px);
-                    letter-spacing: 0.5px;
-                }
-                #dialogue-panel {
-                    display: none;
-                    position: absolute;
-                    bottom: 80px;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    width: 460px;
-                    background: rgba(0,0,0,0.90);
-                    border: 1px solid #ffd700;
-                    border-radius: 12px;
-                    padding: 18px 24px;
-                    color: white;
-                    backdrop-filter: blur(10px);
-                }
-                #dialogue-speaker {
-                    font-size: 13px;
-                    color: #ffd700;
-                    font-weight: bold;
-                    margin-bottom: 8px;
-                }
-                #dialogue-text {
-                    font-size: 15px;
-                    line-height: 1.5;
-                    margin-bottom: 14px;
-                    white-space: pre-line;
-                }
-                #dialogue-options {
-                    font-size: 13px;
-                    color: #aaa;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 4px;
-                }
-                #crosshair {
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    width: 12px;
-                    height: 12px;
-                    transform: translate(-50%, -50%);
-                    pointer-events: none;
-                }
-                #crosshair::before, #crosshair::after {
-                    content: '';
-                    position: absolute;
-                    background: rgba(255,255,255,0.6);
-                }
-                #crosshair::before {
-                    width: 2px;
-                    height: 12px;
-                    left: 5px;
-                }
-                #crosshair::after {
-                    width: 12px;
-                    height: 2px;
-                    top: 5px;
-                }
-                #click-prompt {
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    background: rgba(0,0,0,0.85);
-                    color: white;
-                    padding: 30px 50px;
-                    border-radius: 16px;
-                    text-align: center;
-                    font-size: 18px;
-                }
-                #click-prompt.hidden {
-                    display: none;
-                }
-                #click-prompt span {
-                    color: #ffd700;
-                }
-                .arcade-overlay {
-                    display: none;
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    background: rgba(0,0,0,0.95);
-                    border: 2px solid #ffd700;
-                    border-radius: 16px;
-                    padding: 28px 32px;
-                    color: white;
-                    backdrop-filter: blur(12px);
-                    min-width: 380px;
-                    text-align: center;
-                    z-index: 300;
-                }
-                .arcade-title { font-size: 22px; font-weight: bold; color: #ffd700; margin-bottom: 4px; }
-                .arcade-subtitle { font-size: 12px; color: #777; margin-bottom: 16px; }
-                .arcade-btn {
-                    background: rgba(255,215,0,0.12);
-                    border: 1px solid #ffd700;
-                    color: #ffd700;
-                    padding: 8px 20px;
-                    border-radius: 8px;
-                    font-size: 14px;
-                    cursor: pointer;
-                    margin: 4px;
-                }
-                .arcade-btn:hover { background: rgba(255,215,0,0.28); }
-                .arcade-btn:disabled { opacity: 0.4; cursor: default; }
-                .arcade-btn-green { border-color: #55fc77; color: #55fc77; background: rgba(85,252,119,0.08); }
-                .arcade-close-btn {
-                    display: block;
-                    margin: 14px auto 0;
-                    background: transparent;
-                    border: 1px solid #444;
-                    color: #666;
-                    padding: 5px 16px;
-                    border-radius: 8px;
-                    font-size: 12px;
-                    cursor: pointer;
-                }
-                .arcade-close-btn:hover { border-color: #888; color: #aaa; }
-                .arcade-result { min-height: 26px; font-size: 16px; font-weight: bold; margin: 10px 0; }
-                #slot-reels { font-size: 50px; display: flex; justify-content: center; gap: 12px; margin: 10px 0; }
-                #slot-reels span { background: rgba(255,255,255,0.04); border: 1px solid #2a2a2a; border-radius: 8px; padding: 6px 10px; min-width: 64px; display: inline-block; }
-                .slot-paytable { font-size: 11px; color: #555; margin-bottom: 12px; }
-                #hilo-card-display { font-size: 62px; margin: 6px 0; background: rgba(255,255,255,0.04); border: 1px solid #333; border-radius: 12px; padding: 10px 20px; display: inline-block; min-width: 80px; }
-                #hilo-pot-display { font-size: 18px; color: #ffd700; margin-bottom: 6px; }
-                .hilo-btns { display: flex; justify-content: center; gap: 8px; margin: 8px 0; }
-                .plinko-board { font-family: monospace; font-size: 18px; line-height: 2; text-align: center; margin: 8px 0; user-select: none; }
-                .plinko-row { display: flex; justify-content: center; gap: 14px; }
-                .plinko-slots { display: flex; justify-content: center; gap: 8px; margin-top: 6px; font-size: 13px; font-weight: bold; }
-                .plinko-slot { padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.06); }
-                .plinko-slot-jackpot { color: #55fc77; background: rgba(85,252,119,0.12); }
-                .plinko-slot-bust { color: #ff4444; }
-            </style>
-            <div id="topbar">
-                <h1>🎬 Kai's Cinema</h1>
-                <p><b>WASD</b> Move • <b>Mouse</b> Look • <b>Space</b> Jump/Interact • <b>E</b> Play</p>
-            </div>
-            <div id="location">📍 Loading...</div>
-            <div id="hint"></div>
-            <div id="currency">$ 25  🎟 0</div>
-            <div id="crosshair"></div>
-            <div id="dialogue-panel">
-                <div id="dialogue-speaker"></div>
-                <div id="dialogue-text"></div>
-                <div id="dialogue-options"></div>
-            </div>
+        this.interface = new CinemaUI(this, `
             <div id="arcade-slot" class="arcade-overlay">
                 <div class="arcade-title">🎰 SLOT MACHINE</div>
                 <div class="arcade-subtitle">Match symbols to win big!</div>
@@ -383,32 +169,8 @@ export class TheaterGame {
                 <button id="plinko-drop-btn" class="arcade-btn">▼ DROP</button>
                 <button id="arcade-plinko-close" class="arcade-close-btn">✕ Close</button>
             </div>
-            <div id="click-prompt">
-                <span>Click to Start</span><br>
-                <small style="opacity: 0.7">Click anywhere to capture mouse</small>
-            </div>
-        `;
-        document.body.appendChild(ui);
-
-        this.uiElements = {
-            location: document.getElementById('location'),
-            hint: document.getElementById('hint'),
-            clickPrompt: document.getElementById('click-prompt'),
-            currency: document.getElementById('currency'),
-            dialoguePanel: document.getElementById('dialogue-panel'),
-            dialogueSpeaker: document.getElementById('dialogue-speaker'),
-            dialogueText: document.getElementById('dialogue-text'),
-            dialogueOptions: document.getElementById('dialogue-options'),
-        };
-
-        // Hide prompt when mouse is locked
-        document.addEventListener('pointerlockchange', () => {
-            if (document.pointerLockElement) {
-                this.uiElements.clickPrompt.classList.add('hidden');
-            } else if (!this.arcadeOpen) {
-                this.uiElements.clickPrompt.classList.remove('hidden');
-            }
-        });
+        `);
+        this.uiElements = this.interface.elements;
     }
 
     showHint(text, duration = 3000) {
@@ -423,7 +185,7 @@ export class TheaterGame {
     }
 
     updateWalletUI() {
-        this.uiElements.currency.textContent = `$ ${this.currency}  🎟 ${this.tickets}`;
+        this.uiElements.currency.textContent = `$${this.currency} · ${this.tickets} souvenir ${this.tickets === 1 ? 'ticket' : 'tickets'}`;
     }
 
     collectBill(id) {
@@ -443,15 +205,18 @@ export class TheaterGame {
     openDialogue(speaker, text, options) {
         this.dialogueOpen = true;
         this._dialogueLockYaw = this.player.cameraYaw;
-        document.exitPointerLock();
+        this.syncInput();
+        if (document.pointerLockElement) document.exitPointerLock();
         this.uiElements.dialogueSpeaker.textContent = speaker;
         this.uiElements.dialogueText.textContent = text;
-        this.uiElements.dialogueOptions.innerHTML = options.map(o => `<div>${o.label}</div>`).join('');
+        this.renderDialogueOptions(options);
         this.uiElements.dialoguePanel.style.display = 'block';
         this._dialogueOptions = options;
+        this.uiElements.dialogueOptions.querySelector('button')?.focus();
     }
 
     closeDialogue() {
+        const wasOpen = this.dialogueOpen;
         this.dialogueOpen = false;
         this._dialogueLockYaw = undefined;
         this.uiElements.dialoguePanel.style.display = 'none';
@@ -462,13 +227,25 @@ export class TheaterGame {
             this.cameraSmoothing = this._preDialogueSmooth;
             this._dialogueHasCamera = false;
         }
+        if (wasOpen) { this.syncInput(); this.renderer.domElement.focus({ preventScroll: true }); }
+    }
+
+    renderDialogueOptions(options) {
+        this.uiElements.dialogueOptions.replaceChildren(...options.map(option => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = option.label;
+            button.onclick = option.action;
+            return button;
+        }));
     }
 
     _transitionDialogue(speaker, text, options) {
         this.uiElements.dialogueSpeaker.textContent = speaker;
         this.uiElements.dialogueText.textContent = text;
-        this.uiElements.dialogueOptions.innerHTML = options.map(o => `<div>${o.label}</div>`).join('');
+        this.renderDialogueOptions(options);
         this._dialogueOptions = options;
+        this.uiElements.dialogueOptions.querySelector('button')?.focus();
     }
 
     _openTicketConversation() {
@@ -543,7 +320,7 @@ export class TheaterGame {
     _ticketPurchaseMenu() {
         this._transitionDialogue(
             '🎟️ Gerald the Ticket Seller',
-            '"Great choice! Each ticket gets you into one show.\nHow many would you like?"',
+            '"All screenings are free to visit. These tickets are optional souvenirs.\nHow many would you like?"',
             [
                 { key: 'KeyE', label: '[E] Buy 1 ticket — $5', action: () => this._buyTickets(1, 5) },
                 { key: 'KeyQ', label: '[Q] Buy 3 tickets — $10  (save $5!)', action: () => this._buyTickets(3, 10) },
@@ -555,7 +332,7 @@ export class TheaterGame {
     _ticketWhatsPlaying() {
         this._transitionDialogue(
             '🎟️ Gerald the Ticket Seller',
-            '"We\'ve got four great shows today:\n🎮 Age of War\n🎮 Blast Block\n⚽ Stick Soccer\n🐍 Snake Game\n\nEach ticket is good for one show."',
+            '"We\'ve got four great shows today:\n🎮 Age of War\n🎮 Blast Block\n⚽ Stick Soccer\n🐍 Snake Game\n\nAll four rooms are free to visit. Open The program to choose a screen."',
             [
                 { key: 'KeyE', label: '[E] I\'ll take a ticket!', action: () => this._ticketPurchaseMenu() },
                 { key: 'Escape', label: '[Esc] Thanks, maybe later', action: () => this.closeDialogue() },
@@ -620,7 +397,7 @@ export class TheaterGame {
     _checkInWhatsShowing() {
         this._transitionDialogue(
             '🎬 Rita — Check-In Clerk',
-            '"Tonight\'s lineup:\n🔴 Theater 1 — Age of War (strategy)\n🔵 Theater 2 — Blast Block (puzzle)\n🟢 Theater 3 — Stick Soccer (sports)\n🟩 Theater 4 — Snake Game (arcade)\n\nAll four are running now — just pick your hall!"',
+            '"Tonight\'s lineup:\n🔴 Theater 1 — Age of War (strategy)\n🔵 Theater 2 — Blast Block (puzzle)\n🟢 Theater 3 — Stick Soccer (sports)\n🟩 Theater 4 — Snake Game (arcade)\n\nAll rooms are open to explore. Snake is an unfinished prototype."',
             [
                 { key: 'KeyE', label: '[E] Great, point me to one!',               action: () => this._checkInTheaterMenu() },
                 { key: 'Escape', label: '[Esc] Thanks, I\'ll wander around first', action: () => this.closeDialogue() },
@@ -630,10 +407,10 @@ export class TheaterGame {
 
     _checkInDirections(theater) {
         const d = {
-            theater1: '"Age of War is in Theater 1!\nHead to the back-LEFT corner of the lobby.\nLook for the orange-red glowing arch — you can\'t miss it.\nIt radiates serious battle energy!"',
-            theater2: '"Blast Block is in Theater 2!\nHead to the back-RIGHT corner of the lobby.\nFollow the blue glow down that hallway.\nPuzzle fans love it in there!"',
-            theater3: '"Stick Soccer is in Theater 3!\nHead to the front-LEFT corner — follow the green arch.\nKick-off is whenever you walk through!"',
-            theater4: '"Snake Game is in Theater 4!\nFront-RIGHT corner, mint-green arch.\nThe snake gets fast. Watch that tail!"',
+            theater1: '"Age of War is in Theater 1!\nUse the LEFT hallway nearest the entrance.\nLook for the orange-red glowing arch — you can\'t miss it.\nIt radiates serious battle energy!"',
+            theater2: '"Blast Block is in Theater 2!\nUse the RIGHT hallway nearest the entrance.\nFollow the blue glow down that hallway.\nPuzzle fans love it in there!"',
+            theater3: '"Stick Soccer is in Theater 3!\nUse the far LEFT hallway — follow the green arch.\nKick-off is whenever you walk through!"',
+            theater4: '"Snake Game is in Theater 4!\nFar RIGHT hallway, mint-green arch.\nThe snake gets fast. Watch that tail!"',
         };
 
         this._transitionDialogue(
@@ -650,7 +427,7 @@ export class TheaterGame {
     _checkInFarewell() {
         this._transitionDialogue(
             '🎬 Rita — Check-In Clerk',
-            '"Enjoy the show! And remember — if you need a ticket,\nthe booth is just outside the front entrance.\nHave a wonderful time at Kai\'s Cinema!"',
+            '"Enjoy the show! Every screening room is free to visit.\nUse The program for a direct route to any room.\nHave a wonderful time at Kai\'s Cinema!"',
             [
                 { key: 'Escape', label: '[Esc] Thanks, Rita!', action: () => this.closeDialogue() },
             ]
@@ -701,21 +478,54 @@ export class TheaterGame {
         this.clearHint();
     }
 
-    handleDialogueInput() {
-        if (!this._dialogueOptions) return;
-        for (const opt of this._dialogueOptions) {
-            if (Input.isKeyJustPressed(opt.key)) {
-                opt.action();
-                return;
-            }
-        }
+    syncInput() {
+        Input.setEnabled(!this.menuOpen && !this.dialogueOpen && !this.arcadeOpen);
+    }
+
+    setMenuOpen(open) {
+        this.menuOpen = open;
+        this.syncInput();
+        if (!open) this.renderer.domElement.focus({ preventScroll: true });
+    }
+
+    setQuality(quality) {
+        const ratios = { low: 1, balanced: 1.5, high: 2 };
+        if (!(quality in ratios)) return;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, ratios[quality]));
+        this.renderer.shadowMap.enabled = quality !== 'low';
+        this.scene.traverse(object => {
+            const materials = Array.isArray(object.material) ? object.material : [object.material];
+            for (const material of materials) if (material) material.needsUpdate = true;
+        });
+        this.bloomPass.enabled = quality !== 'low';
+        this.composer.setPixelRatio(this.renderer.getPixelRatio());
+        this.onResize();
+    }
+
+    async enableMouseCapture() {
+        this.setMenuOpen(false);
+        const captured = await Input.requestPointerLock();
+        this.showHint(captured ? 'Mouse captured. Press Esc to release.' : 'Mouse capture is unavailable here. Drag on the scene to look around.', 5000);
     }
 
     setLocationUI(name) {
-        this.uiElements.location.textContent = `📍 ${name}`;
+        this.interface.setLocation(name, getProgramEntry(this.locationName));
     }
 
     loadLocation(name) {
+        if (name === 'theater') { this.interface.open('program'); return; }
+        if (!['exterior', 'lobby', 'lavacave'].includes(name) && !getProgramEntry(name)) return;
+        this.closeDialogue();
+        this.closeArcades();
+        this.clearHint();
+        this.dumpsterAnim = null;
+        Input.reset();
+        this.player.cameraPitch = 0.3;
+        this.player.jumpBuffer = 0;
+        this.player.coyoteTimer = 0;
+        this.player.jumpsUsed = 0;
+        this.player.isGrounded = false;
+        this.cameraInitialized = false;
         // Clear previous location
         if (this.currentLocation) {
             this.currentLocation.dispose();
@@ -816,7 +626,7 @@ export class TheaterGame {
                 // Setup Theater 1 hallway trigger
                 this.currentLocation.setupTheater1Trigger((event) => {
                     if (event === 'enter') {
-                        const note = this.tickets > 0 ? '(uses 1 ticket)' : '— need a ticket!';
+                        const note = '— visitor access included';
                         this.showHint(`Press SPACE to enter Theater 1: Age of War ${note}`, 4000);
                         this.nearTheater1 = true;
                     } else {
@@ -827,7 +637,7 @@ export class TheaterGame {
                 // Setup Theater 2 hallway trigger
                 this.currentLocation.setupTheater2Trigger((event) => {
                     if (event === 'enter') {
-                        const note = this.tickets > 0 ? '(uses 1 ticket)' : '— need a ticket!';
+                        const note = '— visitor access included';
                         this.showHint(`Press SPACE to enter Theater 2: Blast Block ${note}`, 4000);
                         this.nearTheater2 = true;
                     } else {
@@ -838,7 +648,7 @@ export class TheaterGame {
                 // Setup Theater 3 hallway trigger
                 this.currentLocation.setupTheater3Trigger((event) => {
                     if (event === 'enter') {
-                        const note = this.tickets > 0 ? '(uses 1 ticket)' : '— need a ticket!';
+                        const note = '— visitor access included';
                         this.showHint(`Press SPACE to enter Theater 3: Stick Soccer ${note}`, 4000);
                         this.nearTheater3 = true;
                     } else {
@@ -849,7 +659,7 @@ export class TheaterGame {
                 // Setup Theater 4 hallway trigger
                 this.currentLocation.setupTheater4Trigger((event) => {
                     if (event === 'enter') {
-                        const note = this.tickets > 0 ? '(uses 1 ticket)' : '— need a ticket!';
+                        const note = '— visitor access included';
                         this.showHint(`Press SPACE to enter Theater 4: Snake Game ${note}`, 4000);
                         this.nearTheater4 = true;
                     } else {
@@ -888,11 +698,6 @@ export class TheaterGame {
                 this.showHint('Welcome to Kai\'s Cinema! Explore the lobby...', 4000);
                 break;
 
-            case 'theater':
-                // TODO: Implement main theater room
-                this.showHint('Main theater coming soon!', 3000);
-                break;
-
             case 'lavacave':
                 this.currentLocation = new LavaCaveScene(this.scene);
                 this.currentLocation.build();
@@ -922,168 +727,34 @@ export class TheaterGame {
                 this.showHint("Don't fall in the lava!", 4000);
                 break;
 
-            case 'theater4':
-                this.currentLocation = new TheaterRoomScene(this.scene, {
-                    title: 'Snake Game',
-                    url: '../snakeGame.html',
-                    color: 0x55fc77,
-                    description: 'A multiplayer snake game'
-                });
-                this.currentLocation.build();
-                this.currentLocation.setupSeatTriggers(
-                    (seat) => { this.nearSeat = seat; this.showHint('Press E to sit', 5000); },
-                    () => { if (!this.isSitting) { this.nearSeat = null; this.clearHint(); } }
-                );
-
-                this.currentLocation.setupScreenTrigger((approaching) => {
-                    if (approaching) {
-                        this.showHint('Press E to play Snake Game!', 5000);
-                        this.nearScreen = true;
-                    } else {
-                        this.nearScreen = false;
-                    }
-                });
-
-                this.currentLocation.setupExitTrigger((approaching) => {
-                    if (approaching) {
-                        this.showHint('Press SPACE to return to lobby...', 3000);
-                        this.nearTheaterExit = true;
-                    } else {
-                        this.nearTheaterExit = false;
-                    }
-                });
-
-                const theater4Spawn = this.currentLocation.getSpawnPoint();
-                this.player.setPosition(theater4Spawn.x, theater4Spawn.y, theater4Spawn.z);
-                this.player.cameraYaw = Math.PI;
-                this.cameraInitialized = false;
-
-                this.setLocationUI('Theater 4: Snake Game');
-                this.showHint('Walk toward the screen to play!', 4000);
-                break;
-
-            case 'theater3':
-                this.currentLocation = new TheaterRoomScene(this.scene, {
-                    title: 'Stick Soccer',
-                    url: '../stick/index.html',
-                    color: 0x44ff88,
-                    description: 'A stick figure soccer game'
-                });
-                this.currentLocation.build();
-                this.currentLocation.setupSeatTriggers(
-                    (seat) => { this.nearSeat = seat; this.showHint('Press E to sit', 5000); },
-                    () => { if (!this.isSitting) { this.nearSeat = null; this.clearHint(); } }
-                );
-
-                this.currentLocation.setupScreenTrigger((approaching) => {
-                    if (approaching) {
-                        this.showHint('Press E to play Stick Soccer!', 5000);
-                        this.nearScreen = true;
-                    } else {
-                        this.nearScreen = false;
-                    }
-                });
-
-                this.currentLocation.setupExitTrigger((approaching) => {
-                    if (approaching) {
-                        this.showHint('Press SPACE to return to lobby...', 3000);
-                        this.nearTheaterExit = true;
-                    } else {
-                        this.nearTheaterExit = false;
-                    }
-                });
-
-                const theater3Spawn = this.currentLocation.getSpawnPoint();
-                this.player.setPosition(theater3Spawn.x, theater3Spawn.y, theater3Spawn.z);
-                this.player.cameraYaw = Math.PI;
-                this.cameraInitialized = false;
-
-                this.setLocationUI('Theater 3: Stick Soccer');
-                this.showHint('Walk toward the screen to play!', 4000);
-                break;
-
-            case 'theater2':
-                this.currentLocation = new TheaterRoomScene(this.scene, {
-                    title: 'Blast Block',
-                    url: '../blastblock.html',
-                    color: 0x44aaff,
-                    description: 'A block blasting puzzle game'
-                });
-                this.currentLocation.build();
-                this.currentLocation.setupSeatTriggers(
-                    (seat) => { this.nearSeat = seat; this.showHint('Press E to sit', 5000); },
-                    () => { if (!this.isSitting) { this.nearSeat = null; this.clearHint(); } }
-                );
-
-                this.currentLocation.setupScreenTrigger((approaching) => {
-                    if (approaching) {
-                        this.showHint('Press E to play Blast Block!', 5000);
-                        this.nearScreen = true;
-                    } else {
-                        this.nearScreen = false;
-                    }
-                });
-
-                this.currentLocation.setupExitTrigger((approaching) => {
-                    if (approaching) {
-                        this.showHint('Press SPACE to return to lobby...', 3000);
-                        this.nearTheaterExit = true;
-                    } else {
-                        this.nearTheaterExit = false;
-                    }
-                });
-
-                const theater2Spawn = this.currentLocation.getSpawnPoint();
-                this.player.setPosition(theater2Spawn.x, theater2Spawn.y, theater2Spawn.z);
-                this.player.cameraYaw = Math.PI;
-                this.cameraInitialized = false;
-
-                this.setLocationUI('Theater 2: Blast Block');
-                this.showHint('Walk toward the screen to play!', 4000);
-                break;
-
             case 'theater1':
-                this.currentLocation = new TheaterRoomScene(this.scene, {
-                    title: 'Age of War',
-                    url: '../ageOfWar.html',
-                    color: 0xff6644,
-                    description: 'A strategy battle game'
-                });
+            case 'theater2':
+            case 'theater3':
+            case 'theater4': {
+                const project = getProgramEntry(name);
+                this.currentLocation = new TheaterRoomScene(this.scene, project);
                 this.currentLocation.build();
                 this.currentLocation.setupSeatTriggers(
-                    (seat) => { this.nearSeat = seat; this.showHint('Press E to sit', 5000); },
+                    seat => { this.nearSeat = seat; this.showHint('Press E to sit', 5000); },
                     () => { if (!this.isSitting) { this.nearSeat = null; this.clearHint(); } }
                 );
-
-                // Setup screen trigger
-                this.currentLocation.setupScreenTrigger((approaching) => {
-                    if (approaching) {
-                        this.showHint('Press E to play Age of War!', 5000);
-                        this.nearScreen = true;
-                    } else {
-                        this.nearScreen = false;
-                    }
+                this.currentLocation.setupScreenTrigger(approaching => {
+                    this.nearScreen = approaching;
+                    if (approaching) this.showHint(`Press E to play ${project.title}`, 5000);
                 });
-
-                // Setup exit trigger
-                this.currentLocation.setupExitTrigger((approaching) => {
-                    if (approaching) {
-                        this.showHint('Press SPACE to return to lobby...', 3000);
-                        this.nearTheaterExit = true;
-                    } else {
-                        this.nearTheaterExit = false;
-                    }
+                this.currentLocation.setupExitTrigger(approaching => {
+                    this.nearTheaterExit = approaching;
+                    if (approaching) this.showHint('Press SPACE to return to the lobby', 3000);
                 });
-
-                const theater1Spawn = this.currentLocation.getSpawnPoint();
-                this.player.setPosition(theater1Spawn.x, theater1Spawn.y, theater1Spawn.z);
-                this.player.cameraYaw = Math.PI; // Face the screen
-                this.cameraInitialized = false;
-
-                this.setLocationUI('Theater 1: Age of War');
-                this.showHint('Walk toward the screen to play!', 4000);
+                const spawn = this.currentLocation.getSpawnPoint();
+                this.player.setPosition(spawn.x, spawn.y, spawn.z);
+                this.player.cameraYaw = Math.PI;
+                this.setLocationUI(`Screen ${project.number} · ${project.title}`);
+                this.showHint('Take a seat, explore the room, or open the game above.', 4500);
                 break;
+            }
         }
+        this.player.mesh.rotation.y = this.player.cameraYaw;
     }
 
     onResize() {
@@ -1136,6 +807,11 @@ export class TheaterGame {
     }
 
     update(dt) {
+        // Menus and conversations pause movement, physics and world interactions.
+        if (this.menuOpen || this.dialogueOpen) {
+            this.updateCamera(dt);
+            return;
+        }
         // Dumpster cinematic — skip all normal physics/input
         if (this.dumpsterAnim !== null) {
             this._updateDumpsterAnim(dt);
@@ -1153,11 +829,6 @@ export class TheaterGame {
 
         // Update player
         this.player.update(dt);
-
-        // Lock camera during dialogue
-        if (this.dialogueOpen && this._dialogueLockYaw !== undefined) {
-            this.player.cameraYaw = this._dialogueLockYaw;
-        }
 
         // Sitting: lock player in place and handle stand-up
         if (this.isSitting) {
@@ -1180,12 +851,6 @@ export class TheaterGame {
 
         // Update camera
         this.updateCamera(dt);
-
-        // Dialogue takes priority — block all other interaction input
-        if (this.dialogueOpen) {
-            this.handleDialogueInput();
-            return;
-        }
 
         // Check for door entry (space near door)
         if (this.nearDoor && Input.isKeyJustPressed('Space')) {
@@ -1236,28 +901,24 @@ export class TheaterGame {
             this.loadLocation('exterior');
         }
 
-        // Check for theater 1 entry — costs 1 ticket
+        // Check for theater 1 entry — free visitor access
         if (this.nearTheater1 && Input.isKeyJustPressed('Space')) {
-            if (this.tickets > 0) { this.tickets--; this.updateWalletUI(); this.loadLocation('theater1'); }
-            else this.showHint('You need a ticket! Buy one from the booth outside.', 4000);
+            this.loadLocation('theater1');
         }
 
-        // Check for theater 2 entry — costs 1 ticket
+        // Check for theater 2 entry — free visitor access
         if (this.nearTheater2 && Input.isKeyJustPressed('Space')) {
-            if (this.tickets > 0) { this.tickets--; this.updateWalletUI(); this.loadLocation('theater2'); }
-            else this.showHint('You need a ticket! Buy one from the booth outside.', 4000);
+            this.loadLocation('theater2');
         }
 
-        // Check for theater 3 entry — costs 1 ticket
+        // Check for theater 3 entry — free visitor access
         if (this.nearTheater3 && Input.isKeyJustPressed('Space')) {
-            if (this.tickets > 0) { this.tickets--; this.updateWalletUI(); this.loadLocation('theater3'); }
-            else this.showHint('You need a ticket! Buy one from the booth outside.', 4000);
+            this.loadLocation('theater3');
         }
 
-        // Check for theater 4 entry — costs 1 ticket
+        // Check for theater 4 entry — free visitor access
         if (this.nearTheater4 && Input.isKeyJustPressed('Space')) {
-            if (this.tickets > 0) { this.tickets--; this.updateWalletUI(); this.loadLocation('theater4'); }
-            else this.showHint('You need a ticket! Buy one from the booth outside.', 4000);
+            this.loadLocation('theater4');
         }
 
         // Seat interaction (priority over screen launch)
@@ -1368,28 +1029,69 @@ export class TheaterGame {
     }
 
     _openArcadeGame(n) {
+        if (![1, 2, 3].includes(n)) return;
+        this.closeArcades();
         if (this.currency < 5) { this.showHint('Not enough money to play!', 2500); return; }
-        document.exitPointerLock();
-        this.uiElements.clickPrompt.classList.add('hidden');
+        this._arcadeSession = { timers: new Map(), pendingBet: 0, hilo: null };
         this.arcadeOpen = true;
+        this.syncInput();
+        if (document.pointerLockElement) document.exitPointerLock();
         if (n === 1) this._openSlotMachine();
         else if (n === 2) this._openHiLo();
         else if (n === 3) this._openPlinko();
     }
 
-    _closeArcadePanel(id) {
-        document.getElementById(id).style.display = 'none';
+    closeArcades() {
+        const wasOpen = this.arcadeOpen;
+        const session = this._arcadeSession;
+        this._arcadeSession = null;
+        if (session) {
+            for (const [timer, cancel] of session.timers) cancel(timer);
+            session.timers.clear();
+            // An unfinished animation returns its wager; Hi-Lo keeps earned winnings.
+            const returned = session.pendingBet + (session.hilo?.active ? session.hilo.pot : 0);
+            session.pendingBet = 0;
+            if (session.hilo) { session.hilo.active = false; session.hilo.pot = 0; }
+            if (returned > 0) {
+                this.currency += returned;
+                this.updateWalletUI();
+            }
+        }
+        for (const panel of document.querySelectorAll('.arcade-overlay')) panel.style.display = 'none';
         this.arcadeOpen = false;
-        this.renderer.domElement.requestPointerLock();
+        if (wasOpen) { this.syncInput(); this.renderer.domElement.focus({ preventScroll: true }); }
+    }
+
+    _closeArcadePanel() {
+        this.closeArcades();
+    }
+
+    _arcadeTimer(callback, delay, repeat = false) {
+        const session = this._arcadeSession;
+        const invoke = () => {
+            if (!repeat) session.timers.delete(timer);
+            if (this._arcadeSession === session && this.arcadeOpen) callback();
+        };
+        const timer = repeat ? setInterval(invoke, delay) : setTimeout(invoke, delay);
+        session.timers.set(timer, repeat ? clearInterval : clearTimeout);
+        return timer;
+    }
+
+    _clearArcadeTimer(timer) {
+        this._arcadeSession.timers.get(timer)?.(timer);
+        this._arcadeSession.timers.delete(timer);
     }
 
     _openSlotMachine() {
+        const session = this._arcadeSession;
         const panel = document.getElementById('arcade-slot');
         panel.style.display = 'block';
         document.getElementById('slot-result').textContent = '';
+        document.getElementById('slot-spin-btn').disabled = false;
         document.getElementById('arcade-slot-close').onclick = () => this._closeArcadePanel('arcade-slot');
 
         document.getElementById('slot-spin-btn').onclick = () => {
+            if (this._arcadeSession !== session || !this.arcadeOpen || session.pendingBet > 0) return;
             const SYMS = ['💎', '7️⃣', '🍒', '🍋', '⭐'];
             const bet = parseInt(document.getElementById('slot-bet').value);
             if (this.currency < bet) {
@@ -1397,6 +1099,7 @@ export class TheaterGame {
                 r.textContent = 'Not enough money!'; r.style.color = '#ff6666'; return;
             }
             this.currency -= bet;
+            session.pendingBet = bet;
             this.updateWalletUI();
 
             const r1 = document.getElementById('slot-r1');
@@ -1409,14 +1112,14 @@ export class TheaterGame {
 
             const finals = [SYMS[Math.floor(Math.random() * 5)], SYMS[Math.floor(Math.random() * 5)], SYMS[Math.floor(Math.random() * 5)]];
             let t1 = 0, t2 = 0, t3 = 0;
-            const spin1 = setInterval(() => { r1.textContent = SYMS[t1++ % 5]; }, 70);
-            const spin2 = setInterval(() => { r2.textContent = SYMS[t2++ % 5]; }, 70);
-            const spin3 = setInterval(() => { r3.textContent = SYMS[t3++ % 5]; }, 70);
+            const spin1 = this._arcadeTimer(() => { r1.textContent = SYMS[t1++ % 5]; }, 70, true);
+            const spin2 = this._arcadeTimer(() => { r2.textContent = SYMS[t2++ % 5]; }, 70, true);
+            const spin3 = this._arcadeTimer(() => { r3.textContent = SYMS[t3++ % 5]; }, 70, true);
 
-            setTimeout(() => { clearInterval(spin1); r1.textContent = finals[0]; }, 650);
-            setTimeout(() => { clearInterval(spin2); r2.textContent = finals[1]; }, 950);
-            setTimeout(() => {
-                clearInterval(spin3); r3.textContent = finals[2];
+            this._arcadeTimer(() => { this._clearArcadeTimer(spin1); r1.textContent = finals[0]; }, 650);
+            this._arcadeTimer(() => { this._clearArcadeTimer(spin2); r2.textContent = finals[1]; }, 950);
+            this._arcadeTimer(() => {
+                this._clearArcadeTimer(spin3); r3.textContent = finals[2];
                 let payout = 0;
                 if (finals[0] === finals[1] && finals[1] === finals[2]) {
                     if (finals[0] === '💎') payout = bet * 10;
@@ -1432,6 +1135,7 @@ export class TheaterGame {
                     result.textContent = `No match. Lost $${bet}`;
                     result.style.color = '#ff6666';
                 }
+                session.pendingBet = 0;
                 this.currency += payout;
                 this.updateWalletUI();
                 btn.disabled = false;
@@ -1440,11 +1144,13 @@ export class TheaterGame {
     }
 
     _openHiLo() {
+        const session = this._arcadeSession;
         const panel = document.getElementById('arcade-hilo');
         panel.style.display = 'block';
         document.getElementById('arcade-hilo-close').onclick = () => this._closeArcadePanel('arcade-hilo');
 
         const state = { active: false, currentCard: 0, pot: 0 };
+        session.hilo = state;
         const cardNames = ['', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
         const suits = ['♠', '♥', '♦', '♣'];
         const randCard = () => Math.floor(Math.random() * 13) + 1;
@@ -1472,6 +1178,7 @@ export class TheaterGame {
         setActive(false);
 
         startBtn.onclick = () => {
+            if (this._arcadeSession !== session || !this.arcadeOpen || state.active) return;
             if (this.currency < 10) { resultEl.textContent = 'Need $10 to start!'; resultEl.style.color = '#ff6666'; return; }
             this.currency -= 10;
             state.pot = 10;
@@ -1484,6 +1191,7 @@ export class TheaterGame {
         };
 
         const guess = (higher) => {
+            if (this._arcadeSession !== session || !this.arcadeOpen || !state.active) return;
             const next = randCard();
             const tied = next === state.currentCard;
             const correct = higher ? next > state.currentCard : next < state.currentCard;
@@ -1510,6 +1218,7 @@ export class TheaterGame {
         higherBtn.onclick = () => guess(true);
         lowerBtn.onclick = () => guess(false);
         cashoutBtn.onclick = () => {
+            if (this._arcadeSession !== session || !this.arcadeOpen || !state.active) return;
             if (state.pot > 0) {
                 this.currency += state.pot;
                 this.updateWalletUI();
@@ -1524,19 +1233,23 @@ export class TheaterGame {
     }
 
     _openPlinko() {
+        const session = this._arcadeSession;
         const panel = document.getElementById('arcade-plinko');
         panel.style.display = 'block';
         document.getElementById('arcade-plinko-close').onclick = () => this._closeArcadePanel('arcade-plinko');
         document.getElementById('plinko-result').textContent = '';
+        document.getElementById('plinko-drop-btn').disabled = false;
         this._renderPlinkoBoard(-1, 3);
 
         document.getElementById('plinko-drop-btn').onclick = () => {
+            if (this._arcadeSession !== session || !this.arcadeOpen || session.pendingBet > 0) return;
             const bet = parseInt(document.getElementById('plinko-bet').value);
             if (this.currency < bet) {
                 const r = document.getElementById('plinko-result');
                 r.textContent = 'Not enough money!'; r.style.color = '#ff6666'; return;
             }
             this.currency -= bet;
+            session.pendingBet = bet;
             this.updateWalletUI();
 
             const btn = document.getElementById('plinko-drop-btn');
@@ -1556,11 +1269,12 @@ export class TheaterGame {
                 this._renderPlinkoBoard(path[i].step, path[i].col);
                 i++;
                 if (i < path.length) {
-                    setTimeout(animate, 210);
+                    this._arcadeTimer(animate, 210);
                 } else {
                     const multipliers = [0, 0.5, 1, 3, 1, 0.5, 0];
                     const finalCol = path[path.length - 1].col;
                     const won = Math.floor(bet * multipliers[finalCol]);
+                    session.pendingBet = 0;
                     this.currency += won;
                     this.updateWalletUI();
                     const resultEl = document.getElementById('plinko-result');

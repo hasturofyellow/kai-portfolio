@@ -1,26 +1,24 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { Collision } from '../collision.js';
+import { disposeOwnedObjects } from '../sceneResources.js';
 
-// Refined color palette - Deep blue as PRIMARY grounding color
+// Slate architecture with restrained brass and teal lighting.
 const COLORS = {
-    // PRIMARY: Deep Electric Blue - for walls, architecture, grounding
-    primary: 0x060885,
-    // SECONDARY: Hot Magenta - for signage, branding, LED edges
-    secondary: 0xdf3f8b,
-    // TERTIARY: Neon Cyan - for floor strips, glow effects, directional
-    tertiary: 0x00caeb,
-    // POP: Neon Mint - use sparingly for VIP, arcade, special highlights
-    pop: 0x55fc77,
+    primary: 0x293b48,
+    secondary: 0xc8ab78,
+    tertiary: 0x6ea6ad,
+    pop: 0x9fcab0,
     // Backgrounds
-    dark: 0x020210,       // Near black with deep blue undertone
-    darkSurface: 0x040420, // Slightly lighter for surfaces
+    dark: 0x0b1118,
+    darkSurface: 0x18232c,
     white: 0xffffff
 };
 
 export class ExteriorScene {
     constructor(scene) {
         this.scene = scene;
+        this.disposed = false;
         this.objects = [];
         this.lights = [];
         this.marqueeLights = [];
@@ -52,6 +50,10 @@ export class ExteriorScene {
     buildTicketNPC() {
         const loader = new FBXLoader();
         loader.load('../Animated Men Characters - Feb 2019/FBX/Male_Suit.fbx', (fbx) => {
+            if (this.disposed) {
+                disposeOwnedObjects(this.scene, [fbx]);
+                return;
+            }
             fbx.scale.setScalar(0.0125);
             fbx.position.set(12, 0, -2.2); // inside booth, behind window
             fbx.rotation.y = Math.PI; // face toward player (+Z)
@@ -64,7 +66,9 @@ export class ExteriorScene {
                 this.npcMixer = new THREE.AnimationMixer(fbx);
                 this.npcMixer.clipAction(fbx.animations[0]).play();
             }
-        }, undefined, (err) => console.warn('Male_Suit.fbx (exterior NPC) failed to load:', err));
+        }, undefined, (err) => {
+            if (!this.disposed) console.warn('Male_Suit.fbx (exterior NPC) failed to load:', err);
+        });
 
         // Interaction trigger in front of the booth window
         const trigger = new THREE.Mesh(new THREE.BoxGeometry(3, 4, 3));
@@ -184,7 +188,7 @@ export class ExteriorScene {
         // Dark sidewalk — extended to z=-9 so it meets the building facade
         const walkGeo = new THREE.PlaneGeometry(100, 16.5);
         const walkMat = new THREE.MeshStandardMaterial({
-            color: 0x1e1c2e,
+            color: 0x292f35,
             roughness: 0.75,
             metalness: 0.1
         });
@@ -226,7 +230,7 @@ export class ExteriorScene {
     }
 
     createTheaterBuilding() {
-        // Main facade - DEEP BLUE (primary - architecture)
+        // Slate facade keeps the illuminated signage prominent.
         const facadeGeo = new THREE.BoxGeometry(40, 22, 2);
         const facadeMat = new THREE.MeshStandardMaterial({
             color: COLORS.primary,
@@ -241,7 +245,7 @@ export class ExteriorScene {
         this.objects.push(facade);
         Collision.addCollider(facade);
 
-        // Architectural columns - deep blue with subtle magenta LED strips
+        // Architectural columns with subtle brass LED strips
         const columnGeo = new THREE.CylinderGeometry(0.9, 0.9, 18, 16);
         const columnMat = new THREE.MeshStandardMaterial({
             color: COLORS.primary,
@@ -257,7 +261,7 @@ export class ExteriorScene {
             this.objects.push(column);
             Collision.addCollider(column);
 
-            // LED edge on column - magenta (secondary - LED edges)
+            // Warm LED edge on column
             const ledGeo = new THREE.BoxGeometry(0.08, 16, 0.08);
             const ledMat = new THREE.MeshBasicMaterial({ color: COLORS.secondary });
             const led = new THREE.Mesh(ledGeo, ledMat);
@@ -266,10 +270,10 @@ export class ExteriorScene {
             this.objects.push(led);
         }
 
-        // Awning - dark with magenta neon edge
+        // Dark awning with a warm neon edge
         const awningGeo = new THREE.BoxGeometry(16, 0.5, 6);
         const awningMat = new THREE.MeshStandardMaterial({
-            color: 0x16143a,
+            color: 0x202c35,
             roughness: 0.5
         });
         const awning = new THREE.Mesh(awningGeo, awningMat);
@@ -278,7 +282,7 @@ export class ExteriorScene {
         this.scene.add(awning);
         this.objects.push(awning);
 
-        // Awning edge - magenta (secondary - branding)
+        // Brass awning edge
         const trimGeo = new THREE.BoxGeometry(16.5, 0.12, 0.12);
         const trimMat = new THREE.MeshBasicMaterial({ color: COLORS.secondary });
         const trim = new THREE.Mesh(trimGeo, trimMat);
@@ -288,7 +292,7 @@ export class ExteriorScene {
     }
 
     createMarquee() {
-        // Marquee box - deep blue (primary)
+        // Slate marquee box
         const marqueeGeo = new THREE.BoxGeometry(30, 6, 1.5);
         const marqueeMat = new THREE.MeshStandardMaterial({
             color: COLORS.primary,
@@ -300,7 +304,7 @@ export class ExteriorScene {
         this.scene.add(marquee);
         this.objects.push(marquee);
 
-        // Main title - MAGENTA (secondary - branding/signage)
+        // Warm marquee lettering
         const textCanvas = this.createTextCanvas("KAI'S CINEMA", 512, 128, COLORS.secondary);
         const textTex = new THREE.CanvasTexture(textCanvas);
         const textMat = new THREE.MeshBasicMaterial({
@@ -474,14 +478,14 @@ export class ExteriorScene {
 
         // Lamp head - cyan (tertiary - lighting/directional)
         const lampGeo = new THREE.SphereGeometry(0.45, 16, 16);
-        const lampMat = new THREE.MeshBasicMaterial({ color: COLORS.tertiary });
+        const lampMat = new THREE.MeshBasicMaterial({ color: 0xffe2b6 });
         const lamp = new THREE.Mesh(lampGeo, lampMat);
         lamp.position.set(x, 8.3, z);
         this.scene.add(lamp);
         this.objects.push(lamp);
 
         // Light - cyan
-        const light = new THREE.PointLight(COLORS.tertiary, 5, 18);
+        const light = new THREE.PointLight(0xffe2b6, 4, 18);
         light.position.set(x, 8, z);
         light.castShadow = true;
         this.scene.add(light);
@@ -785,18 +789,18 @@ export class ExteriorScene {
         this.dumpsterTrigger = triggerMesh;
     }
     setupLighting() {
-        // Strong white ambient - same fix as lobby/theater, ensures surfaces are visible
-        const ambient = new THREE.AmbientLight(0xffffff, 2.0);
+        // Neutral light keeps faces and architecture readable at night.
+        const ambient = new THREE.AmbientLight(0xfff2dc, 1.6);
         this.scene.add(ambient);
         this.lights.push(ambient);
 
-        // Hemisphere - deep night blue from sky, subtle warm ground bounce
-        const hemiLight = new THREE.HemisphereLight(0x1a2a6c, 0x331100, 1.2);
+        // Soft sky light and warm ground bounce
+        const hemiLight = new THREE.HemisphereLight(0x9baec2, 0x40382e, 0.8);
         this.scene.add(hemiLight);
         this.lights.push(hemiLight);
 
         // Moon directional light - cool blue-white, casts moonlit shadows
-        const moonLight = new THREE.DirectionalLight(0xaabbff, 2.0);
+        const moonLight = new THREE.DirectionalLight(0xc4d3e5, 1.7);
         moonLight.position.set(35, 50, -80);
         moonLight.castShadow = true;
         moonLight.shadow.mapSize.width = 2048;
@@ -812,33 +816,34 @@ export class ExteriorScene {
 
         // Overhead fill lights along the sidewalk - illuminate the player's path
         [-20, 0, 20].forEach(x => {
-            const fill = new THREE.PointLight(0xaabbff, 3, 28);
+            const fill = new THREE.PointLight(0xe3e0d5, 3, 28);
             fill.position.set(x, 14, 4);
             this.scene.add(fill);
             this.lights.push(fill);
         });
 
-        // Main facade spotlight - magenta wash on the building front
-        const facadeSpot = new THREE.SpotLight(COLORS.secondary, 8, 45, Math.PI / 5, 0.5, 1);
+        // A restrained warm wash frames the entrance.
+        const facadeSpot = new THREE.SpotLight(COLORS.secondary, 5, 45, Math.PI / 5, 0.5, 1);
         facadeSpot.position.set(0, 22, 12);
         facadeSpot.target.position.set(0, 12, -10);
         this.scene.add(facadeSpot);
         this.scene.add(facadeSpot.target);
+        this.objects.push(facadeSpot.target);
         this.lights.push(facadeSpot);
 
-        // Marquee glow - magenta
-        const marqueeGlow = new THREE.PointLight(COLORS.secondary, 8, 22);
+        // Brass marquee glow
+        const marqueeGlow = new THREE.PointLight(COLORS.secondary, 4.5, 22);
         marqueeGlow.position.set(0, 17, -4);
         this.scene.add(marqueeGlow);
         this.lights.push(marqueeGlow);
 
         // Ground floor neon wash - cyan either side of entrance
-        const groundCyanL = new THREE.PointLight(COLORS.tertiary, 3, 15);
+        const groundCyanL = new THREE.PointLight(COLORS.tertiary, 1.8, 15);
         groundCyanL.position.set(-10, 1, -4);
         this.scene.add(groundCyanL);
         this.lights.push(groundCyanL);
 
-        const groundCyanR = new THREE.PointLight(COLORS.tertiary, 3, 15);
+        const groundCyanR = new THREE.PointLight(COLORS.tertiary, 1.8, 15);
         groundCyanR.position.set(10, 1, -4);
         this.scene.add(groundCyanR);
         this.lights.push(groundCyanR);
@@ -889,26 +894,18 @@ export class ExteriorScene {
     }
 
     dispose() {
-        if (this.npcMixer) { this.npcMixer.stopAllAction(); this.npcMixer = null; }
-
-        for (const obj of this.objects) {
-            this.scene.remove(obj);
-            if (obj.geometry) obj.geometry.dispose();
-            if (obj.material) {
-                if (Array.isArray(obj.material)) {
-                    obj.material.forEach(m => m.dispose());
-                } else {
-                    obj.material.dispose();
-                }
-            }
-        }
-
-        for (const light of this.lights) {
-            this.scene.remove(light);
-        }
-
+        if (this.disposed) return;
+        this.disposed = true;
+        disposeOwnedObjects(this.scene, [...this.objects, ...this.lights], [this.npcMixer]);
+        Collision.clear();
         this.objects = [];
         this.lights = [];
         this.marqueeLights = [];
+        this.moneyStacks = [];
+        this.npcMixer = null;
+        this.ticketTrigger = null;
+        this.doorTrigger = null;
+        this.dumpsterTrigger = null;
+        this.dumpsterLidHinge = null;
     }
 }

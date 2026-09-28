@@ -1,19 +1,21 @@
 import * as THREE from 'three';
 import { Collision } from '../collision.js';
+import { disposeOwnedObjects } from '../sceneResources.js';
 
-// Neon color palette
+// Neutral theater finishes; each screen retains its own project color.
 const COLORS = {
-    primary: 0x00caeb,    // Cyan
-    secondary: 0xdf3f8b,  // Hot pink
-    tertiary: 0x060885,   // Deep blue
-    accent: 0x55fc77,     // Neon green
-    dark: 0x030312,       // Near black
+    primary: 0x6ea6ad,    // Muted teal
+    secondary: 0xc8ab78,  // Brass
+    tertiary: 0x293b48,   // Slate
+    accent: 0x9fcab0,     // Soft mint
+    dark: 0x0b1118,
     white: 0xffffff
 };
 
 export class TheaterRoomScene {
     constructor(scene, gameConfig) {
         this.scene = scene;
+        this.disposed = false;
         this.objects = [];
         this.lights = [];
         this.seats = [];
@@ -41,13 +43,13 @@ export class TheaterRoomScene {
     }
 
     setupLighting() {
-        // Dark blue-violet ambient - lets colored neon lights dominate instead of flat white wash
-        const ambient = new THREE.AmbientLight(0x1a1060, 1.2);
+        // Neutral ambient reveals the seats without overpowering the screen.
+        const ambient = new THREE.AmbientLight(0xc8d0d7, 0.85);
         this.scene.add(ambient);
         this.lights.push(ambient);
 
-        // Hemisphere - dim cyan from ceiling, near-black warm from floor
-        const hemi = new THREE.HemisphereLight(0x003366, 0x0a0520, 0.8);
+        // Soft overhead light with a warm ground bounce
+        const hemi = new THREE.HemisphereLight(0xa6bdc8, 0x3b342b, 0.55);
         this.scene.add(hemi);
         this.lights.push(hemi);
 
@@ -63,8 +65,8 @@ export class TheaterRoomScene {
         this.scene.add(screenSpill);
         this.lights.push(screenSpill);
 
-        // Secondary screen light - cyan
-        const screenCyan = new THREE.PointLight(COLORS.primary, 4, 30);
+        // Restrained teal fill behind the screen
+        const screenCyan = new THREE.PointLight(COLORS.primary, 2.5, 30);
         screenCyan.position.set(0, 10, -18);
         this.scene.add(screenCyan);
         this.lights.push(screenCyan);
@@ -74,25 +76,25 @@ export class TheaterRoomScene {
             const color = i % 2 === 0 ? COLORS.secondary : COLORS.primary;
 
             // Center uplight
-            const aisleLight = new THREE.PointLight(color, 5, 28);
+            const aisleLight = new THREE.PointLight(color, 3, 28);
             aisleLight.position.set(0, 1.5, z);
             this.scene.add(aisleLight);
             this.lights.push(aisleLight);
 
             // Flanking fills under seat rows - very close to floor, illuminates under seats
             [-6, 6].forEach(x => {
-                const fill = new THREE.PointLight(0x1a0e3a, 2, 10);
+                const fill = new THREE.PointLight(0xa8b5bd, 1.5, 10);
                 fill.position.set(x, 0.5, z);
                 this.scene.add(fill);
                 this.lights.push(fill);
             });
         });
 
-        // Ceiling wash lights - lowered to y=8 (was y=13), doubles floor illumination
+        // Neutral ceiling fill separates the architecture from the game screen.
         [5, 10, 15, 20].forEach((z, i) => {
-            const color = i % 2 === 0 ? COLORS.primary : COLORS.secondary;
+            const color = i % 2 === 0 ? 0xb8c8ce : 0xddd3bf;
             [-8, 0, 8].forEach(x => {
-                const ceiling = new THREE.PointLight(color, 7, 16);
+                const ceiling = new THREE.PointLight(color, 3.5, 16);
                 ceiling.position.set(x, 8, z);
                 this.scene.add(ceiling);
                 this.lights.push(ceiling);
@@ -101,12 +103,12 @@ export class TheaterRoomScene {
 
         // Wall neon strip lights
         [-15, 0, 15].forEach(z => {
-            const leftLight = new THREE.PointLight(COLORS.primary, 3, 15);
+            const leftLight = new THREE.PointLight(COLORS.primary, 2, 15);
             leftLight.position.set(-13, 6, z);
             this.scene.add(leftLight);
             this.lights.push(leftLight);
 
-            const rightLight = new THREE.PointLight(COLORS.secondary, 3, 15);
+            const rightLight = new THREE.PointLight(COLORS.secondary, 2, 15);
             rightLight.position.set(13, 6, z);
             this.scene.add(rightLight);
             this.lights.push(rightLight);
@@ -125,11 +127,11 @@ export class TheaterRoomScene {
     buildFloor() {
         // Dark reflective floor
         const floorMat = new THREE.MeshStandardMaterial({
-            color: 0x2a2850,
-            roughness: 0.18,
-            metalness: 0.75,
-            emissive: 0x0a0830,
-            emissiveIntensity: 0.35
+            color: 0x242e36,
+            roughness: 0.4,
+            metalness: 0.3,
+            emissive: 0x10171b,
+            emissiveIntensity: 0.1
         });
 
         const floor = new THREE.Mesh(
@@ -167,7 +169,7 @@ export class TheaterRoomScene {
 
     buildWalls() {
         const wallMat = new THREE.MeshStandardMaterial({
-            color: 0x0e0e28,
+            color: 0x25323e,
             roughness: 0.7,
             metalness: 0.2
         });
@@ -256,7 +258,7 @@ export class TheaterRoomScene {
 
     buildCeiling() {
         const ceilingMat = new THREE.MeshStandardMaterial({
-            color: 0x0c0c20,
+            color: 0x17212a,
             roughness: 0.9,
             metalness: 0.0
         });
@@ -325,6 +327,7 @@ export class TheaterRoomScene {
 
         // Game icon on screen
         this.buildScreenContent();
+        this.buildScreenLabel();
 
         // Screen trigger zone
         const triggerBox = new THREE.Mesh(
@@ -332,6 +335,7 @@ export class TheaterRoomScene {
         );
         triggerBox.position.set(0, 6, -5);
         triggerBox.visible = false;
+        this.objects.push(triggerBox);
         Collision.addTrigger(triggerBox, (event) => {
             if (event === 'enter') {
                 this.onScreenApproach && this.onScreenApproach(true);
@@ -437,13 +441,42 @@ export class TheaterRoomScene {
         this.objects.push(playIcon);
     }
 
+    buildScreenLabel() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024;
+        canvas.height = 256;
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#111a21';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.textAlign = 'center';
+        context.fillStyle = '#d8b77a';
+        context.font = '26px Arial, sans-serif';
+        const edition = this.gameConfig.number ? `SCREEN ${this.gameConfig.number} / ${this.gameConfig.category}` : 'NOW SHOWING';
+        context.fillText(edition, 512, 56);
+        context.fillStyle = '#f1efe9';
+        context.font = '80px Georgia, serif';
+        context.fillText(this.gameConfig.title, 512, 151, 940);
+        context.fillStyle = '#a9b2b8';
+        context.font = '24px Arial, sans-serif';
+        context.fillText('Walk toward the screen and press E to play', 512, 217);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        const label = new THREE.Mesh(
+            new THREE.PlaneGeometry(18, 4.5),
+            new THREE.MeshBasicMaterial({ map: texture, toneMapped: false })
+        );
+        label.position.set(0, 11.4, -18.8);
+        this.scene.add(label);
+        this.objects.push(label);
+    }
+
     buildSeats() {
         this.seats = [];
 
         const seatMat = new THREE.MeshStandardMaterial({
-            color: 0x18163a,
-            roughness: 0.6,
-            metalness: 0.2
+            color: 0x303b43,
+            roughness: 0.8,
+            metalness: 0.1
         });
 
         // Rows of seats
@@ -565,6 +598,7 @@ export class TheaterRoomScene {
         );
         triggerBox.position.set(0, 5, 26);
         triggerBox.visible = false;
+        this.objects.push(triggerBox);
         Collision.addTrigger(triggerBox, (event) => {
             if (event === 'enter') {
                 this.onExitApproach && this.onExitApproach(true);
@@ -628,12 +662,12 @@ export class TheaterRoomScene {
         });
 
         // One PointLight per side wall at y=3.5 - only 3.5 units above floor, very effective
-        const leftFill = new THREE.PointLight(COLORS.primary, 4, 22);
+        const leftFill = new THREE.PointLight(COLORS.primary, 2.5, 22);
         leftFill.position.set(-12, 3.5, 2);
         this.scene.add(leftFill);
         this.lights.push(leftFill);
 
-        const rightFill = new THREE.PointLight(COLORS.secondary, 4, 22);
+        const rightFill = new THREE.PointLight(COLORS.secondary, 2.5, 22);
         rightFill.position.set(12, 3.5, 2);
         this.scene.add(rightFill);
         this.lights.push(rightFill);
@@ -641,7 +675,7 @@ export class TheaterRoomScene {
 
     buildCeilingStarField() {
         this.ceilingStars = [];
-        const starColors = [0xffffff, 0x00caeb, 0xdf3f8b, 0x55fc77];
+        const starColors = [0xf1eee4, COLORS.primary, COLORS.secondary, COLORS.accent];
         const colorWeights = [0.45, 0.35, 0.15, 0.05];
 
         for (let i = 0; i < 80; i++) {
@@ -787,21 +821,17 @@ export class TheaterRoomScene {
     }
 
     dispose() {
-        this.objects.forEach(obj => {
-            if (obj.geometry) obj.geometry.dispose();
-            if (obj.material) {
-                if (Array.isArray(obj.material)) {
-                    obj.material.forEach(m => m.dispose());
-                } else {
-                    obj.material.dispose();
-                }
-            }
-            this.scene.remove(obj);
-        });
-
-        this.lights.forEach(light => this.scene.remove(light));
-
+        if (this.disposed) return;
+        this.disposed = true;
+        disposeOwnedObjects(this.scene, [...this.objects, ...this.lights]);
+        Collision.clear();
         this.objects = [];
         this.lights = [];
+        this.seats = [];
+        this.ceilingStars = [];
+        this.screenMesh = null;
+        this.glowRing = null;
+        this.onScreenApproach = null;
+        this.onExitApproach = null;
     }
 }
