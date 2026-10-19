@@ -10,7 +10,15 @@ const programSource = await readFile(new URL('../src/game/program.js', import.me
 const { getProgramEntry } = await import(`data:text/javascript;base64,${Buffer.from(programSource).toString('base64')}`);
 
 function vector(x = 0, y = 0, z = 0) {
-    return { x, y, z, set(x, y, z) { Object.assign(this, { x, y, z }); } };
+    return { x, y, z, set(x, y, z) { Object.assign(this, { x, y, z }); }, clone() { return new Vector3(this.x, this.y, this.z); } };
+}
+
+class Vector3 {
+    constructor(x = 0, y = 0, z = 0) { Object.assign(this, { x, y, z }); }
+    clone() { return new Vector3(this.x, this.y, this.z); }
+    copy(value) { Object.assign(this, { x: value.x, y: value.y, z: value.z }); return this; }
+    add(value) { this.x += value.x; this.y += value.y; this.z += value.z; return this; }
+    lerp(value, amount) { this.x += (value.x - this.x) * amount; this.y += (value.y - this.y) * amount; this.z += (value.z - this.z) * amount; return this; }
 }
 
 const interactionFlags = [
@@ -41,9 +49,14 @@ function fixture() {
         Location.prototype[`setup${name}`] = function (...args) { this.callbacks[name] = args; };
     }
     const TheaterGame = new Function('Input', 'Collision', 'ExteriorScene', 'LobbyScene',
-        'LavaCaveScene', 'TheaterRoomScene', 'getProgramEntry',
+        'LavaCaveScene', 'TheaterRoomScene', 'getProgramEntry', 'THREE',
         `${controllerSource}\nreturn TheaterGame;`)(input,
-        { clear: () => events.push('collision:clear') }, Location, Location, Location, Location, getProgramEntry);
+        { clear: () => events.push('collision:clear'), constrainCamera: (target, desired) => {
+            events.push('camera:constrain');
+            const safe = desired.clone();
+            safe.z = Math.min(safe.z, 24.7);
+            return safe;
+        } }, Location, Location, Location, Location, getProgramEntry, { Vector3 });
     const game = Object.create(TheaterGame.prototype);
     Object.assign(game, {
         scene: {}, locationName: 'lobby', currentLocation: new Location(),
@@ -73,6 +86,9 @@ function fixture() {
         mesh: { position: vector(2, 3, 4), scale: vector(1, 1, 1), rotation: {} },
         velocity: vector(3, -5, 2), cameraPitch: 0.3, cameraYaw: 0,
         update: () => events.push('player:update'),
+        updateSeated() { events.push('player:seated-update'); this.cameraYaw += 0.5; },
+        setSeated: height => events.push(`player:seated:${height}`),
+        clearSeated: () => events.push('player:standing'),
         getPosition() { return this.mesh.position; },
         setPosition(x, y, z) { this.mesh.position.set(x, y, z); this.velocity.set(0, 0, 0); }
     };
@@ -128,8 +144,8 @@ test('travel cancels cinematic/seated state, clears interaction input and resets
     assert.equal(game._dialogueHasCamera, false);
     assert.equal(game.uiElements.dialoguePanel.style.display, 'none');
     assert.equal(game.cameraInitialized, false);
-    assert.equal(game.cameraDistance, 10);
-    assert.equal(game.cameraHeight, 4);
+    assert.equal(game.cameraDistance, 6.5);
+    assert.equal(game.cameraHeight, 2.8);
     assert.equal(game.cameraSmoothing, 0.08);
     assert.equal(game.player.cameraPitch, 0.3);
     assert.equal(game.player.cameraYaw, Math.PI);
@@ -198,4 +214,79 @@ test('closing the menu only restores gameplay input when other overlays are also
     game.arcadeOpen = false;
     game.syncInput();
     assert.equal(input.enabled, true);
+});
+
+test('seating uses the rig without squashing, keeps its facing fixed, and stands in clear space', () => {
+    const { game, input, events } = fixture();
+    game.nearSeat = { x: 5, z: 20, seatY: 1.4, meshRot: Math.PI, camYaw: Math.PI, standX: 5, standZ: 18.3 };
+    Object.getPrototypeOf(game).sitDown.call(game);
+    assert.equal(game.isSitting, true);
+    assert.ok(events.includes('player:seated:1.4'));
+    assert.deepEqual([game.player.mesh.scale.x, game.player.mesh.scale.y, game.player.mesh.scale.z], [1, 1, 1]);
+    events.length = 0;
+    game.update(0.016);
+    assert.ok(events.includes('player:seated-update'));
+    assert.ok(!events.includes('player:update'));
+    assert.equal(game.player.mesh.rotation.y, Math.PI);
+    assert.equal(game.player.cameraYaw, Math.PI + 0.5);
+    assert.equal(game.player.mesh.position.y, 0);
+
+    input.pressed.add('KeyE');
+    game.update(0.016);
+    assert.equal(game.isSitting, false);
+    assert.equal(game.currentSeatPos, null);
+    assert.ok(events.includes('player:standing'));
+    assert.deepEqual([game.player.mesh.position.x, game.player.mesh.position.z], [5, 18.3]);
+    assert.equal(input.pressed.size, 0);
+});
+
+test('camera smoothing cannot return the camera behind the rear wall', () => {
+    const { game, events } = fixture();
+    delete game.updateCamera;
+    game.cameraTargetOffset = new Vector3(0, 3, 0);
+    game.cameraCurrentPos = new Vector3(5, 4, 32);
+    game.cameraCurrentLookAt = new Vector3(5, 1.7, 20);
+    game.camera = { position: new Vector3(), lookAt() {} };
+    game.player.setPosition(5, 0, 20);
+    game.player.cameraYaw = Math.PI;
+    game.updateCamera(0.016);
+    assert.equal(events.filter(event => event === 'camera:constrain').length, 2);
+    assert.ok(game.camera.position.z <= 24.7);
+});
+
+test('conversation framing shows the NPC and restores the player when dismissed', () => {
+    const { game, input } = fixture();
+    game.frameConversation(12, -2.2, 0);
+    assert.equal(game.player.mesh.visible, false);
+    assert.deepEqual([game.dialogueTarget.x, game.dialogueTarget.z], [12, -2.2]);
+    assert.ok(game.dialogueCamera.z > game.dialogueTarget.z);
+    game.dialogueOpen = true;
+    input.setEnabled(false);
+    Object.getPrototypeOf(game).closeDialogue.call(game);
+    assert.equal(game.player.mesh.visible, true);
+    assert.equal(game.dialogueTarget, null);
+    assert.equal(input.enabled, true);
+});
+
+test('one interaction key opens the clerk conversation without also opening an arcade panel', () => {
+    const { game, input, events } = fixture();
+    game.nearCheckIn = true;
+    game.nearArcade = 1;
+    input.pressed.add('KeyE');
+    game.update(0.016);
+    assert.ok(events.includes('checkin:open'));
+    assert.ok(!events.includes('arcade:open'));
+});
+
+test('leaving one overlapping seat zone keeps the nearest remaining seat selectable', () => {
+    const { game } = fixture();
+    const near = { x: 3, z: 4 };
+    const far = { x: 5.8, z: 4 };
+    game.updateSeatProximity(far, true);
+    game.updateSeatProximity(near, true);
+    assert.equal(game.nearSeat, near);
+    game.updateSeatProximity(far, false);
+    assert.equal(game.nearSeat, near);
+    game.updateSeatProximity(near, false);
+    assert.equal(game.nearSeat, null);
 });

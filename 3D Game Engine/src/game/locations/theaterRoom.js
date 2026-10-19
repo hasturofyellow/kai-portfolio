@@ -513,10 +513,10 @@ export class TheaterRoomScene {
 
         // Back
         const back = new THREE.Mesh(
-            new THREE.BoxGeometry(2, 2.5, 0.4),
+            new THREE.BoxGeometry(2, 1.5, 0.4),
             seatMat
         );
-        back.position.set(0, 2.2, -0.7);
+        back.position.set(0, 1.95, -0.7);
         group.add(back);
 
         // Neon edge on seat - alternating colors per row
@@ -550,7 +550,12 @@ export class TheaterRoomScene {
         this.scene.add(group);
         this.objects.push(group);
 
-        this.seats.push({ x, z });
+        group.updateMatrixWorld(true);
+        for (const part of [seat, back]) {
+            const bounds = new THREE.Box3().setFromObject(part);
+            Collision.addBox(bounds.min, bounds.max, { ground: false });
+        }
+        this.seats.push({ x, z, seatY: 1.4, meshRot: Math.PI, camYaw: Math.PI, standX: x, standZ: z - 1.7 });
     }
 
     buildExitDoor() {
@@ -775,9 +780,9 @@ export class TheaterRoomScene {
 
     setupSeatTriggers(onEnterSeat, onExitSeat) {
         this.seats.forEach((seat, i) => {
-            const trigger = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.5, 2.4));
+            const trigger = new THREE.Mesh(new THREE.BoxGeometry(3, 3.2, 3));
             trigger.visible = false;
-            trigger.position.set(seat.x, 1.2, seat.z);
+            trigger.position.set(seat.x, 1.6, seat.z);
             this.scene.add(trigger);
             this.objects.push(trigger);
             Collision.addTrigger(trigger, (event) => {

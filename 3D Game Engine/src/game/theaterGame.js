@@ -118,9 +118,9 @@ export class TheaterGame {
 
         // Camera smoothing parameters
         this.cameraSmoothing = 0.08;  // Lower = smoother
-        this.cameraDistance = 10;
-        this.cameraHeight = 4;
-        this.cameraTargetOffset = new THREE.Vector3(0, 2.5, 0);
+        this.cameraDistance = 6.5;
+        this.cameraHeight = 2.8;
+        this.cameraTargetOffset = new THREE.Vector3(0, 3, 0);
 
         // Current camera position (for smoothing)
         this.cameraCurrentPos = new THREE.Vector3();
@@ -221,6 +221,9 @@ export class TheaterGame {
         this._dialogueLockYaw = undefined;
         this.uiElements.dialoguePanel.style.display = 'none';
         this._dialogueOptions = null;
+        this.dialogueTarget = null;
+        this.dialogueCamera = null;
+        this.player.mesh.visible = true;
         if (this._dialogueHasCamera) {
             this.cameraDistance = this._preDialogueDist;
             this.cameraHeight = this._preDialogueHeight;
@@ -228,6 +231,22 @@ export class TheaterGame {
             this._dialogueHasCamera = false;
         }
         if (wasOpen) { this.syncInput(); this.renderer.domElement.focus({ preventScroll: true }); }
+    }
+
+    frameConversation(x, z, facingYaw) {
+        this._preDialogueDist = this.cameraDistance;
+        this._preDialogueHeight = this.cameraHeight;
+        this._preDialogueSmooth = this.cameraSmoothing;
+        this._dialogueHasCamera = true;
+        this.dialogueTarget = new THREE.Vector3(x, 2.65, z);
+        this.dialogueCamera = new THREE.Vector3(
+            x + Math.sin(facingYaw) * 4.4 + Math.cos(facingYaw) * 0.7,
+            2.8,
+            z + Math.cos(facingYaw) * 4.4 - Math.sin(facingYaw) * 0.7
+        );
+        this.player.mesh.visible = false;
+        this.cameraSmoothing = 0.05;
+        this.cameraInitialized = false;
     }
 
     renderDialogueOptions(options) {
@@ -249,15 +268,7 @@ export class TheaterGame {
     }
 
     _openTicketConversation() {
-        const pPos = this.player.getPosition();
-        this._preDialogueDist = this.cameraDistance;
-        this._preDialogueHeight = this.cameraHeight;
-        this._preDialogueSmooth = this.cameraSmoothing;
-        this._dialogueHasCamera = true;
-        this.player.cameraYaw = Math.atan2(12 - pPos.x, -2.2 - pPos.z);
-        this.cameraDistance = 6;
-        this.cameraHeight = 2.5;
-        this.cameraSmoothing = 0.05;
+        this.frameConversation(12, -2.2, 0);
 
         if (this.metGerald) {
             // Repeat visit — he remembers you
@@ -360,15 +371,7 @@ export class TheaterGame {
     }
 
     _openCheckInConversation() {
-        const pPos = this.player.getPosition();
-        this._preDialogueDist = this.cameraDistance;
-        this._preDialogueHeight = this.cameraHeight;
-        this._preDialogueSmooth = this.cameraSmoothing;
-        this._dialogueHasCamera = true;
-        this.player.cameraYaw = Math.atan2(-20 - pPos.x, -2 - pPos.z);
-        this.cameraDistance = 6;
-        this.cameraHeight = 2.5;
-        this.cameraSmoothing = 0.05;
+        this.frameConversation(-20, -2, Math.PI / 2);
 
         this.openDialogue(
             '🎬 Rita — Check-In Clerk',
@@ -440,12 +443,13 @@ export class TheaterGame {
     }
 
     sitDown() {
+        if (!this.nearSeat) return;
         this.isSitting = true;
         const s = this.nearSeat;
-        this.currentSeatPos = { x: s.x, z: s.z, seatY: s.seatY, meshRot: s.meshRot, camYaw: s.camYaw };
-
-        // Squish player to look seated
-        this.player.mesh.scale.set(1.05, 0.72, 1.05);
+        const position = this.player.getPosition();
+        this.currentSeatPos = { ...s, standX: s.standX ?? position.x, standZ: s.standZ ?? position.z };
+        this.player.setPosition(s.x, 0, s.z);
+        this.player.setSeated(s.seatY ?? 1.4);
 
         // Orient camera toward the seat's facing direction initially
         this.player.cameraYaw = s.camYaw ?? Math.PI;
@@ -455,27 +459,47 @@ export class TheaterGame {
         this._preSitDist = this.cameraDistance;
         this._preSitHeight = this.cameraHeight;
         this._preSitSmooth = this.cameraSmoothing;
-        this.cameraDistance = 6;
-        this.cameraHeight = 1.8;
+        this.cameraDistance = 5.5;
+        this.cameraHeight = 4.2;
         this.cameraSmoothing = 0.04;
+        Input.reset();
 
         // Persist "stand up" hint while seated
         this.showHint('Press E to stand up', 9999999);
     }
 
+    updateSeatProximity(seat, nearby) {
+        this.nearbySeats ??= new Set();
+        if (seat) {
+            if (nearby) this.nearbySeats.add(seat);
+            else this.nearbySeats.delete(seat);
+        }
+        if (this.isSitting) return;
+        const position = this.player.getPosition();
+        const previous = this.nearSeat;
+        this.nearSeat = [...this.nearbySeats].sort((a, b) =>
+            Math.hypot(a.x - position.x, a.z - position.z) - Math.hypot(b.x - position.x, b.z - position.z)
+        )[0] ?? null;
+        if (this.nearSeat) this.showHint('Press E to sit', 5000);
+        else if (previous) this.clearHint();
+    }
+
     standUp() {
+        const seat = this.currentSeatPos;
         this.isSitting = false;
         this.currentSeatPos = null;
-
-        // Restore normal scale
-        this.player.mesh.scale.set(1, 1, 1);
+        this.player.clearSeated();
+        if (seat) this.player.setPosition(seat.standX, 0, seat.standZ);
+        this.nearSeat = null;
+        Input.reset();
 
         // Restore camera
-        this.cameraDistance = this._preSitDist ?? 10;
-        this.cameraHeight = this._preSitHeight ?? 4;
+        this.cameraDistance = this._preSitDist ?? 6.5;
+        this.cameraHeight = this._preSitHeight ?? 2.8;
         this.cameraSmoothing = this._preSitSmooth ?? 0.08;
 
         this.clearHint();
+        this.updateSeatProximity();
     }
 
     syncInput() {
@@ -521,6 +545,7 @@ export class TheaterGame {
         this.dumpsterAnim = null;
         Input.reset();
         this.player.cameraPitch = 0.3;
+        this.player.clearSeated();
         this.player.jumpBuffer = 0;
         this.player.coyoteTimer = 0;
         this.player.jumpsUsed = 0;
@@ -550,11 +575,12 @@ export class TheaterGame {
         this.nearCheckIn = false;
         this.nearArcade = 0;
         this.nearSeat = null;
+        this.nearbySeats = new Set();
         this.isSitting = false;
         this.currentSeatPos = null;
         this.player.mesh.scale.set(1, 1, 1);
-        this.cameraDistance = 10;
-        this.cameraHeight = 4;
+        this.cameraDistance = 6.5;
+        this.cameraHeight = 2.8;
         this.cameraSmoothing = 0.08;
         this.dialogueOpen = false;
         this._dialogueOptions = null;
@@ -609,8 +635,8 @@ export class TheaterGame {
                 this.currentLocation.build();
                 this.currentLocation.setupMoneyPickups(this.collectedBills, (id) => this.collectBill(id));
                 this.currentLocation.setupSeatTriggers(
-                    (seat) => { this.nearSeat = seat; this.showHint('Press E to sit', 5000); },
-                    () => { if (!this.isSitting) { this.nearSeat = null; this.clearHint(); } }
+                    seat => this.updateSeatProximity(seat, true),
+                    seat => this.updateSeatProximity(seat, false)
                 );
 
                 // Setup entrance trigger (to go back outside)
@@ -735,8 +761,8 @@ export class TheaterGame {
                 this.currentLocation = new TheaterRoomScene(this.scene, project);
                 this.currentLocation.build();
                 this.currentLocation.setupSeatTriggers(
-                    seat => { this.nearSeat = seat; this.showHint('Press E to sit', 5000); },
-                    () => { if (!this.isSitting) { this.nearSeat = null; this.clearHint(); } }
+                    seat => this.updateSeatProximity(seat, true),
+                    seat => this.updateSeatProximity(seat, false)
                 );
                 this.currentLocation.setupScreenTrigger(approaching => {
                     this.nearScreen = approaching;
@@ -773,20 +799,24 @@ export class TheaterGame {
         }
 
         // Calculate ideal camera position based on player orientation
-        const pitchInfluence = player.cameraPitch * 6;
+        const pitchInfluence = player.cameraPitch * 3;
         const idealDistance = this.cameraDistance;
         const idealHeight = this.cameraHeight + pitchInfluence;
 
         // Target position (camera BEHIND player, not in front)
         // Negate the offset so camera is opposite to where player faces
-        const targetPos = new THREE.Vector3(
+        let targetPos = new THREE.Vector3(
             player.mesh.position.x - Math.sin(player.cameraYaw) * idealDistance,
             player.mesh.position.y + idealHeight,
             player.mesh.position.z - Math.cos(player.cameraYaw) * idealDistance
         );
 
         // Look-at target (slightly above player)
-        const targetLookAt = player.mesh.position.clone().add(this.cameraTargetOffset);
+        const targetLookAt = this.dialogueOpen && this.dialogueTarget
+            ? this.dialogueTarget.clone()
+            : player.mesh.position.clone().add(this.isSitting ? new THREE.Vector3(0, 3.8, 0) : this.cameraTargetOffset);
+        if (this.dialogueOpen && this.dialogueCamera) targetPos.copy(this.dialogueCamera);
+        targetPos = Collision.constrainCamera(targetLookAt, targetPos, 0.25);
 
         // Initialize camera position on first frame
         if (!this.cameraInitialized) {
@@ -800,10 +830,17 @@ export class TheaterGame {
 
         this.cameraCurrentPos.lerp(targetPos, smoothFactor);
         this.cameraCurrentLookAt.lerp(targetLookAt, smoothFactor);
+        // A smoothed orbit can cross a wall even when both end positions are clear.
+        this.cameraCurrentPos.copy(Collision.constrainCamera(this.cameraCurrentLookAt, this.cameraCurrentPos, 0.25));
 
         // Apply to camera
         this.camera.position.copy(this.cameraCurrentPos);
         this.camera.lookAt(this.cameraCurrentLookAt);
+        // If a nearby wall forces a first-person distance, keep the view clear.
+        const headX = this.camera.position.x - player.mesh.position.x;
+        const headY = this.camera.position.y - player.mesh.position.y - 3;
+        const headZ = this.camera.position.z - player.mesh.position.z;
+        player.mesh.visible = !this.dialogueOpen && headX * headX + headY * headY + headZ * headZ > 1;
     }
 
     update(dt) {
@@ -827,15 +864,13 @@ export class TheaterGame {
             return;
         }
 
-        // Update player
-        this.player.update(dt);
-
-        // Sitting: lock player in place and handle stand-up
+        // Sitting updates the pose and free-look camera without physics or triggers.
         if (this.isSitting) {
             const sp = this.currentSeatPos;
-            this.player.mesh.position.set(sp.x, sp.seatY ?? 1.4, sp.z);
+            this.player.updateSeated(dt);
+            this.player.mesh.position.set(sp.x, 0, sp.z);
             this.player.velocity.set(0, 0, 0);
-            this.player.mesh.rotation.y = this.player.cameraYaw;
+            this.player.mesh.rotation.y = sp.meshRot ?? Math.PI;
             this.updateCamera(dt);
             if (this.currentLocation && this.currentLocation.update) {
                 this.currentLocation.update(dt, this.player.getPosition());
@@ -843,6 +878,8 @@ export class TheaterGame {
             if (Input.isKeyJustPressed('KeyE')) this.standUp();
             return;
         }
+
+        this.player.update(dt);
 
         // Update current location (pass player position for interactive elements)
         if (this.currentLocation && this.currentLocation.update) {
@@ -875,16 +912,19 @@ export class TheaterGame {
         // Check for ticket seller interaction
         if (this.nearTicket && Input.isKeyJustPressed('KeyE')) {
             this._openTicketConversation();
+            return;
         }
 
         // Check for check-in clerk interaction
         if (this.nearCheckIn && Input.isKeyJustPressed('KeyE')) {
             this._openCheckInConversation();
+            return;
         }
 
         // Arcade minigames
         if (this.nearArcade && Input.isKeyJustPressed('KeyE')) {
             this._openArcadeGame(this.nearArcade);
+            return;
         }
 
         // Death zones

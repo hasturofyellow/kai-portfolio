@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { Collision } from '../collision.js';
+import { CharacterRig } from '../characterRig.js';
 import { disposeOwnedObjects } from '../sceneResources.js';
 
 // Slate architecture and restrained brass/teal accents frame the program.
@@ -25,6 +26,9 @@ export class LobbyScene {
         this.sofaMixer = null;
         this.npcMixer = null;
         this.ticketNpcMixer = null;
+        this.sofaRig = null;
+        this.npcRig = null;
+        this.ticketNpcRig = null;
         this.checkInTrigger = null;
     }
 
@@ -622,18 +626,18 @@ export class LobbyScene {
                 disposeOwnedObjects(this.scene, [fbx]);
                 return;
             }
-            fbx.scale.setScalar(0.0125);
-            fbx.position.set(-20, 0, -2); // left side of lobby, near the arcade corner
-            fbx.rotation.y = -Math.PI / 2; // face +X toward lobby center
-            fbx.traverse(child => {
-                if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
-            });
-            this.scene.add(fbx);
-            this.objects.push(fbx);
-            if (fbx.animations?.length > 0) {
-                this.npcMixer = new THREE.AnimationMixer(fbx);
-                this.npcMixer.clipAction(fbx.animations[0]).play();
-            }
+            const rig = new CharacterRig(fbx, { targetHeight: 3.2 });
+            rig.model.position.set(-20, 0, -2); // left side of lobby, near the arcade corner
+            rig.model.rotation.y = Math.PI / 2; // face +X toward lobby center
+            rig.setState('idle');
+            this.scene.add(rig.model);
+            this.objects.push(rig.model);
+            this.npcRig = rig;
+            this.npcMixer = rig.mixer;
+            Collision.addBox(
+                { x: -20.55, y: 0, z: -2.55 }, { x: -19.45, y: 3.2, z: -1.45 },
+                { camera: false, ground: false }
+            );
         }, undefined, (err) => {
             if (!this.disposed) console.warn('Smooth_Male_Casual.fbx failed to load:', err);
         });
@@ -655,18 +659,18 @@ export class LobbyScene {
                 disposeOwnedObjects(this.scene, [fbx]);
                 return;
             }
-            fbx.scale.setScalar(0.0125);
-            fbx.position.set(-20, 0, 14.5); // standing on floor, behind counter (back face z=13.5)
-            fbx.rotation.y = 0; // face -Z toward approaching player
-            fbx.traverse(child => {
-                if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
-            });
-            this.scene.add(fbx);
-            this.objects.push(fbx);
-            if (fbx.animations?.length > 0) {
-                this.ticketNpcMixer = new THREE.AnimationMixer(fbx);
-                this.ticketNpcMixer.clipAction(fbx.animations[0]).play();
-            }
+            const rig = new CharacterRig(fbx, { targetHeight: 3.2 });
+            rig.model.position.set(-20, 0, 14.5); // standing on floor, behind counter (back face z=13.5)
+            rig.model.rotation.y = Math.PI; // face -Z toward approaching player
+            rig.setState('idle');
+            this.scene.add(rig.model);
+            this.objects.push(rig.model);
+            this.ticketNpcRig = rig;
+            this.ticketNpcMixer = rig.mixer;
+            Collision.addBox(
+                { x: -20.55, y: 0, z: 13.95 }, { x: -19.45, y: 3.2, z: 15.05 },
+                { camera: false, ground: false }
+            );
         }, undefined, (err) => {
             if (!this.disposed) console.warn('Male_Suit.fbx (ticket NPC) failed to load:', err);
         });
@@ -701,28 +705,25 @@ export class LobbyScene {
 
     buildSofaNPC() {
         const loader = new FBXLoader();
-        loader.load('Sitting Laughing.fbx', (fbx) => {
+        loader.load('../Animated Men Characters - Feb 2019/FBX/Smooth_Male_Casual.fbx', (fbx) => {
             if (this.disposed) {
                 disposeOwnedObjects(this.scene, [fbx]);
                 return;
             }
-            fbx.scale.setScalar(0.0125); // Match world scale (proportional to player/counter)
-            fbx.position.set(13, 1.1, -5); // butt on seat top (seat top at y=1.1)
-            fbx.rotation.y = Math.PI / 2; // face away from sofa back (+X direction)
-            fbx.traverse(child => {
-                if (child.isMesh) {
-                    child.castShadow = true;
-                    child.receiveShadow = true;
-                }
-            });
-            this.scene.add(fbx);
-            this.objects.push(fbx);
-            if (fbx.animations?.length > 0) {
-                this.sofaMixer = new THREE.AnimationMixer(fbx);
-                this.sofaMixer.clipAction(fbx.animations[0]).play();
-            }
+            const rig = new CharacterRig(fbx, { targetHeight: 3.2 });
+            rig.model.position.set(13, 0, -5);
+            rig.model.rotation.y = Math.PI / 2; // face away from sofa back (+X direction)
+            rig.setSeated(1.1);
+            this.scene.add(rig.model);
+            this.objects.push(rig.model);
+            this.sofaRig = rig;
+            this.sofaMixer = rig.mixer;
+            Collision.addBox(
+                { x: 12.45, y: 0, z: -5.55 }, { x: 14.5, y: 2.9, z: -4.45 },
+                { camera: false, ground: false }
+            );
         }, undefined, (err) => {
-            if (!this.disposed) console.warn('Sitting Laughing.fbx failed to load:', err);
+            if (!this.disposed) console.warn('Smooth_Male_Casual.fbx (seated NPC) failed to load:', err);
         });
     }
 
@@ -746,10 +747,10 @@ export class LobbyScene {
 
         // Back
         const back = new THREE.Mesh(
-            new THREE.BoxGeometry(4, 2, 0.5),
+            new THREE.BoxGeometry(4, 1.4, 0.5),
             baseMat
         );
-        back.position.set(0, 1.8, -0.75);
+        back.position.set(0, 1.5, -0.75);
         group.add(back);
 
         // Magenta LED edge (secondary)
@@ -764,6 +765,12 @@ export class LobbyScene {
         group.rotation.y = rotation;
         this.scene.add(group);
         this.objects.push(group);
+
+        group.updateMatrixWorld(true);
+        for (const part of [seat, back]) {
+            const bounds = new THREE.Box3().setFromObject(part);
+            Collision.addBox(bounds.min, bounds.max, { ground: false });
+        }
     }
 
     buildArcadeCorner() {
@@ -1138,13 +1145,13 @@ export class LobbyScene {
 
     setupSeatTriggers(onEnterSeat, onExitSeat) {
         const sofaPositions = [
-            { x: 13, z: -5 },
-            { x: 22, z: -5 }
+            // The opposite sofa is occupied by the seated NPC.
+            { x: 22, z: -5, seatY: 1.1, meshRot: -Math.PI / 2, camYaw: -Math.PI / 2, standX: 20.35, standZ: -5 }
         ];
         sofaPositions.forEach((seat, i) => {
-            const trigger = new THREE.Mesh(new THREE.BoxGeometry(4, 2.5, 2.4));
+            const trigger = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.5, 3.2));
             trigger.visible = false;
-            trigger.position.set(seat.x, 1.2, seat.z);
+            trigger.position.set(seat.standX, 1.2, seat.standZ);
             this.scene.add(trigger);
             this.objects.push(trigger);
             Collision.addTrigger(trigger, (event) => {
@@ -1202,9 +1209,9 @@ export class LobbyScene {
         if (this.chandelierRing1) this.chandelierRing1.rotation.z += dt * 0.15;
         if (this.chandelierRing2) this.chandelierRing2.rotation.z -= dt * 0.1;
         if (this.chandelierRing3) this.chandelierRing3.rotation.z += dt * 0.08;
-        if (this.sofaMixer) this.sofaMixer.update(dt);
-        if (this.npcMixer) this.npcMixer.update(dt);
-        if (this.ticketNpcMixer) this.ticketNpcMixer.update(dt);
+        if (this.sofaRig) this.sofaRig.update(dt);
+        if (this.npcRig) this.npcRig.update(dt);
+        if (this.ticketNpcRig) this.ticketNpcRig.update(dt);
     }
 
     dispose() {
@@ -1219,6 +1226,9 @@ export class LobbyScene {
         this.sofaMixer = null;
         this.npcMixer = null;
         this.ticketNpcMixer = null;
+        this.sofaRig = null;
+        this.npcRig = null;
+        this.ticketNpcRig = null;
         this.checkInTrigger = null;
         this.fountainWater = null;
         this.eyeGroup = null;

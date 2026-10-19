@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { Input } from '../input.js';
 import { Collision } from './collision.js';
+import { CharacterRig } from './characterRig.js';
 
 export class Player {
     constructor(scene) {
@@ -12,8 +13,7 @@ export class Player {
         this.mesh.position.y = 1;
         this.scene.add(this.mesh);
         this.mixer = null;
-
-        this._loadCharacterModel();
+        this.rig = null;
 
         // Physics
         this.velocity = new THREE.Vector3();
@@ -22,13 +22,16 @@ export class Player {
         this.jumpForce = 12;
         this.doubleJumpForce = 10;
         this.gravity = -30;
-        this.radius = 0.5;
+        this.radius = 0.4;
+        this.height = 3.2;
 
         // State
         this.isGrounded = true;
         this.jumpsUsed = 0;
         this.maxJumps = 2;
         this.floorY = 0; // Can be overridden per-location
+        this.isSeated = false;
+        this.seatY = null;
 
         // Coyote time & jump buffer
         this.coyoteTime = 0.12;
@@ -39,55 +42,75 @@ export class Player {
         // Camera control
         this.cameraYaw = 0;
         this.cameraPitch = 0.3;
+        this._loadCharacterModel();
     }
 
     _loadCharacterModel() {
         const loader = new FBXLoader();
         loader.load('../Animated Men Characters - Feb 2019/FBX/Male_Casual.fbx', (fbx) => {
-            fbx.scale.setScalar(0.0125);
-            fbx.traverse(child => {
-                if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
-            });
-            this.mesh.add(fbx);
-            if (fbx.animations?.length > 0) {
-                this.mixer = new THREE.AnimationMixer(fbx);
-                this.mixer.clipAction(fbx.animations[0]).play();
-            }
+            this.rig = new CharacterRig(fbx, { targetHeight: this.height });
+            this.mesh.add(this.rig.model);
+            this.mixer = this.rig.mixer;
+            if (this.isSeated) this.rig.setSeated(this.seatY);
         }, undefined, () => this._createFallbackMesh());
     }
 
     _createFallbackMesh() {
         const body = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.4, 0.4, 1, 16),
-            new THREE.MeshStandardMaterial({ color: 0xff6666, roughness: 0.35, metalness: 0.15 })
+            new THREE.CylinderGeometry(0.35, 0.35, 2.4, 16),
+            new THREE.MeshStandardMaterial({ color: 0x405663, roughness: 0.65 })
         );
-        body.position.y = 0.5;
+        body.position.y = 1.2;
         body.castShadow = true;
         this.mesh.add(body);
 
         const head = new THREE.Mesh(
-            new THREE.SphereGeometry(0.35, 16, 16),
+            new THREE.SphereGeometry(0.4, 16, 16),
             new THREE.MeshStandardMaterial({ color: 0xffcc99 })
         );
-        head.position.y = 1.2;
+        head.position.y = 2.8;
         head.castShadow = true;
         this.mesh.add(head);
     }
 
     setPosition(x, y, z) {
+        if (this.isSeated) this.clearSeated();
         this.mesh.position.set(x, y, z);
         this.velocity.set(0, 0, 0);
     }
 
-    update(dt) {
-        if (this.mixer) this.mixer.update(dt);
-
+    _updateCameraInput() {
         // Input accumulates camera movement during a drag or optional pointer lock.
         if (Input.enabled) {
             this.cameraYaw -= Input.mouse.dx * 0.002;
             this.cameraPitch -= Input.mouse.dy * 0.002;
             this.cameraPitch = Math.max(-0.5, Math.min(1.2, this.cameraPitch));
         }
+    }
+
+    setSeated(seatY) {
+        this.isSeated = true;
+        this.seatY = seatY;
+        this.mesh.position.y = 0;
+        this.velocity.set(0, 0, 0);
+        this.jumpBuffer = 0;
+        this.rig?.setSeated(seatY);
+    }
+
+    clearSeated() {
+        this.isSeated = false;
+        this.seatY = null;
+        this.rig?.clearSeated();
+    }
+
+    updateSeated(dt) {
+        this._updateCameraInput();
+        this.rig?.update(dt);
+    }
+
+    update(dt) {
+        if (this.isSeated) { this.updateSeated(dt); return; }
+        this._updateCameraInput();
 
         // Timers
         if (this.jumpBuffer > 0) this.jumpBuffer -= dt;
@@ -124,8 +147,9 @@ export class Player {
             this.velocity.z = moveDir.z * currentSpeed;
             this.mesh.rotation.y = Math.atan2(moveDir.x, moveDir.z);
         } else {
-            this.velocity.x *= 0.85;
-            this.velocity.z *= 0.85;
+            const damping = Math.pow(0.85, dt * 60);
+            this.velocity.x *= damping;
+            this.velocity.z *= damping;
         }
 
         // Jump input buffering
@@ -161,19 +185,25 @@ export class Player {
         newPos.y += this.velocity.y * dt;
         newPos.z += this.velocity.z * dt;
 
-        // Collision detection (horizontal)
-        const pushOut = Collision.checkSphere(
-            new THREE.Vector3(newPos.x, this.mesh.position.y, newPos.z),
-            this.radius
-        );
-
-        if (pushOut) {
-            newPos.x += pushOut.x;
-            newPos.z += pushOut.z;
-
-            // Stop velocity in collision direction
-            if (Math.abs(pushOut.x) > 0.001) this.velocity.x = 0;
-            if (Math.abs(pushOut.z) > 0.001) this.velocity.z = 0;
+        // Small horizontal steps keep a sprint frame from tunneling through thin props.
+        const distance = Math.hypot(newPos.x - this.mesh.position.x, newPos.z - this.mesh.position.z);
+        const steps = Math.max(1, Math.ceil(distance / this.radius));
+        const stepX = (newPos.x - this.mesh.position.x) / steps;
+        const stepZ = (newPos.z - this.mesh.position.z) / steps;
+        newPos.x = this.mesh.position.x;
+        newPos.z = this.mesh.position.z;
+        const bodyFeet = new THREE.Vector3();
+        for (let step = 0; step < steps; step++) {
+            newPos.x += stepX;
+            newPos.z += stepZ;
+            bodyFeet.set(newPos.x, this.mesh.position.y, newPos.z);
+            const pushOut = Collision.checkBody(bodyFeet, this.radius, this.height);
+            if (pushOut) {
+                newPos.x += pushOut.x;
+                newPos.z += pushOut.z;
+                if (Math.abs(pushOut.x) > 0.001) this.velocity.x = 0;
+                if (Math.abs(pushOut.z) > 0.001) this.velocity.z = 0;
+            }
         }
 
         // Apply position
@@ -193,6 +223,10 @@ export class Player {
         } else {
             this.isGrounded = false;
         }
+
+        const moving = this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z > 0.04;
+        this.rig?.setState(!this.isGrounded ? 'jump' : moving ? (isRunning ? 'run' : 'walk') : 'idle');
+        this.rig?.update(dt);
 
         // Check triggers
         Collision.checkTriggers(this.mesh.position, this.radius);

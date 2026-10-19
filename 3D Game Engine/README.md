@@ -50,6 +50,12 @@ the current pot. Scene travel closes these activities safely.
 - `src/game/program.js`: the shared project metadata used by the program and rooms.
 - `src/ui/cinemaUI.js` and `cinema.css`: responsive menus, navigation and overlays.
 - `src/game/theaterGame.js`: navigation, interactions and the render loop.
+- `src/game/characterRig.js`: consistent human scale, named animation states,
+  grounded locomotion and pelvis alignment for seats. Standing actors use idle
+  poses; the occupied lounge sofa is reserved for its NPC.
+- `src/game/collision.js`: full-height player collision, solid furniture/NPC
+  proxies and camera obstruction checks. Seated characters keep the seat's facing
+  direction while the camera orbits; standing returns to clear floor space.
 - `src/input.js`: focus-aware keyboard input, drag camera and optional pointer lock.
 - `src/game/sceneResources.js`: disposal of owned scene resources while preserving
   player/shared resources. Async model callbacks reject results after departure.
@@ -63,9 +69,23 @@ node --test
 ```
 
 The tests cover input reset and focus behavior, scene disposal and late model
-loads, navigation and pause state, and arcade timer/payout lifecycle. They use
+loads, navigation and pause state, character movement/seating, camera obstruction,
+and arcade timer/payout lifecycle. They use
 controlled stubs for browser/Three.js boundaries; browser checks remain necessary
 for rendering and native focus/pointer-lock behavior.
+
+Optional tests also parse the actual FBX assets to verify normalized height,
+animation clips, grounded shoes and seated pelvis alignment. From this directory,
+prepare the existing pinned Three.js runtime once in PowerShell, then rerun tests:
+
+```powershell
+./tests/setup-character-runtime.ps1
+node --test
+```
+
+The setup script downloads Three.js 0.160.0 into the repository's untracked
+`output/character-test-runtime` directory. Those asset tests skip when the optional
+runtime is absent; the remaining tests do not require network access.
 
 For a browser smoke test:
 
@@ -75,6 +95,10 @@ For a browser smoke test:
 4. Return to the lobby and entrance. Confirm room links and hints update.
 5. Try optional mouse capture. Both success and rejection should leave usable input.
 6. Check narrow layouts: every project and the menu close button must remain reachable.
+7. Stop moving and confirm idle poses; walk, run, jump and land. NPCs should face
+   visitors, and Gerald's head should stay inside the ticket-window opening.
+8. Sit near a theater chair, orbit the camera and stand. Confirm the pose stays
+   aligned, occupied seats cannot be selected, and nearby walls do not blank the view.
 
 The supplied FBX models may emit Three.js warnings about excess skinning weights;
 the loader reduces them to its supported count. Asset optimization and full touch

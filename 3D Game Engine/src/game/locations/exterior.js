@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { Collision } from '../collision.js';
+import { CharacterRig } from '../characterRig.js';
 import { disposeOwnedObjects } from '../sceneResources.js';
 
 // Slate architecture with restrained brass and teal lighting.
@@ -25,6 +26,7 @@ export class ExteriorScene {
         this.moneyStacks = [];
         this.time = 0;
         this.npcMixer = null;
+        this.npcRig = null;
         this.ticketTrigger = null;
     }
 
@@ -54,18 +56,18 @@ export class ExteriorScene {
                 disposeOwnedObjects(this.scene, [fbx]);
                 return;
             }
-            fbx.scale.setScalar(0.0125);
-            fbx.position.set(12, 0, -2.2); // inside booth, behind window
-            fbx.rotation.y = Math.PI; // face toward player (+Z)
-            fbx.traverse(child => {
-                if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
-            });
-            this.scene.add(fbx);
-            this.objects.push(fbx);
-            if (fbx.animations?.length > 0) {
-                this.npcMixer = new THREE.AnimationMixer(fbx);
-                this.npcMixer.clipAction(fbx.animations[0]).play();
-            }
+            const rig = new CharacterRig(fbx, { targetHeight: 3.2 });
+            rig.model.position.set(12, 0, -2.2); // inside booth, behind window
+            rig.model.rotation.y = 0; // face toward player (+Z)
+            rig.setState('idle');
+            this.scene.add(rig.model);
+            this.objects.push(rig.model);
+            this.npcRig = rig;
+            this.npcMixer = rig.mixer;
+            Collision.addBox(
+                { x: 11.45, y: 0, z: -2.75 }, { x: 12.55, y: 3.2, z: -1.65 },
+                { camera: false, ground: false }
+            );
         }, undefined, (err) => {
             if (!this.disposed) console.warn('Male_Suit.fbx (exterior NPC) failed to load:', err);
         });
@@ -449,8 +451,8 @@ export class ExteriorScene {
         this.objects.push(sign);
 
         // Booth interior light — warm white so NPC is clearly visible
-        const boothLight = new THREE.PointLight(0xfff5e0, 6, 8);
-        boothLight.position.set(12, 3.5, -1.5);
+        const boothLight = new THREE.PointLight(0xfff5e0, 2, 8);
+        boothLight.position.set(12, 4.3, -0.8);
         this.scene.add(boothLight);
         this.lights.push(boothLight);
     }
@@ -875,7 +877,7 @@ export class ExteriorScene {
 
     update(dt) {
         this.time += dt;
-        if (this.npcMixer) this.npcMixer.update(dt);
+        if (this.npcRig) this.npcRig.update(dt);
 
         // Subtle marquee light chase animation
         for (let i = 0; i < this.marqueeLights.length; i++) {
@@ -903,6 +905,7 @@ export class ExteriorScene {
         this.marqueeLights = [];
         this.moneyStacks = [];
         this.npcMixer = null;
+        this.npcRig = null;
         this.ticketTrigger = null;
         this.doorTrigger = null;
         this.dumpsterTrigger = null;
