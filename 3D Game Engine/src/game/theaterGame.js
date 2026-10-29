@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { Settings } from '../settings.js';
 import { Input } from '../input.js';
 import { Collision } from './collision.js';
@@ -10,8 +13,22 @@ import { ExteriorScene } from './locations/exterior.js';
 import { LobbyScene } from './locations/lobby.js';
 import { TheaterRoomScene } from './locations/theaterRoom.js';
 import { LavaCaveScene } from './locations/lavaCaveScene.js';
+import { BackHallScene } from './locations/backHallScene.js';
+import { JailScene } from './locations/jailScene.js';
 
 export class TheaterGame {
+    static ITEM_DEFS = {
+        Pizza:     { emoji: '🍕', format: 'fbx', path: '../Pizza.fbx',                         scale: 0.002 },
+        Soda:      { emoji: '🥤', format: 'fbx', path: '../Soda.fbx',                          scale: 0.002 },
+        Fries:     { emoji: '🍟', format: 'fbx', path: '../Chips.fbx',                         scale: 0.002 },
+        Hamburger: { emoji: '🍔', format: 'obj', path: '../Hamburger/Hamburger_01.obj',
+                     mtl: '../Hamburger/Hamburger_01.mtl',      scale: 0.003 },
+        Popcorn:   { emoji: '🍿', format: 'obj', path: '../Box of popcorn/model.obj',
+                     mtl: '../Box of popcorn/materials.mtl',    scale: 0.03  },
+        OldKey:    { emoji: '🗝️', format: null,  path: null,                                   scale: 1     },
+        CriticPass:{ emoji: '🏅', format: null,  path: null,                                   scale: 1     },
+    };
+
     constructor() {
         this.setupRenderer();
         this.setupScene();
@@ -25,6 +42,7 @@ export class TheaterGame {
         Settings.add('renderer', this.renderer);
         Settings.add('scene', this.scene);
         Settings.add('camera', this.camera);
+        Settings.add('cameraSensitivity', Number(localStorage.getItem('kai-camera-sensitivity')) || 1);
 
         // Create player
         this.player = new Player(this.scene);
@@ -39,6 +57,23 @@ export class TheaterGame {
         this.tickets = 0;
         this.collectedBills = new Set();
         this.metGerald = false;
+        this.strangerFed = false;  // true after player shares food with the lobby stranger
+        this.activity = {
+            conversations: new Set(),
+            gamesPlayed: new Set(),
+            moviesAttended: new Set(),
+            unpaidMovies: new Set(),
+            caveVisits: 0,
+            bailPaid: 0,
+        };
+        this.unlockedRewards = new Set();
+        this.inventory = [];       // [{name: string, count: number}]
+        this.equippedItem = null;
+        this.selectedSlot = 0;     // 0=money, 1=ticket, 2-7=food items
+        this.pendingPurchase = null; // {cost, onConfirm} waiting for player to select 💵 and press U
+        this._scrollCooldown = 0;
+        this._pendingLocation = null;
+        this.updateInventoryUI();
 
         // Sitting state
         this.isSitting = false;
@@ -48,12 +83,29 @@ export class TheaterGame {
         // Arcade state
         this.nearArcade = 0;
         this.arcadeOpen = false;
+        this.gameOpen = false;
+        this._gameReturnSeat = null;
 
         // Dumpster animation state
         this.dumpsterAnim = null;
 
-        // Load starting location
-        this.loadLocation('exterior');
+        // Local QA can deep-link to a room without weakening progression in
+        // the published experience (for example: ?start=lobby).
+        const previewParams = new URLSearchParams(window.location.search);
+        const previewStart = previewParams.get('start');
+        const previewLocations = new Set(['exterior', 'lobby', 'backhall', 'lavacave', 'jail']);
+        const isLocalPreview = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+        this.loadLocation(isLocalPreview && previewLocations.has(previewStart) ? previewStart : 'exterior');
+        if (isLocalPreview && previewParams.has('x') && previewParams.has('z')) {
+            const previewX = Number(previewParams.get('x'));
+            const previewZ = Number(previewParams.get('z'));
+            const previewYaw = Number(previewParams.get('yaw'));
+            if (Number.isFinite(previewX) && Number.isFinite(previewZ)) {
+                this.player.setPosition(previewX, 1, previewZ);
+                if (Number.isFinite(previewYaw)) this.player.cameraYaw = previewYaw;
+                this.cameraInitialized = false;
+            }
+        }
 
         // Handle window resize
         window.addEventListener('resize', () => this.onResize());
@@ -151,14 +203,9 @@ export class TheaterGame {
                     backdrop-filter: blur(10px);
                 }
                 #topbar h1 {
-                    margin: 0 0 4px 0;
+                    margin: 0;
                     font-size: 18px;
                     color: #ffd700;
-                }
-                #topbar p {
-                    margin: 0;
-                    font-size: 12px;
-                    opacity: 0.8;
                 }
                 #location {
                     position: absolute;
@@ -170,6 +217,74 @@ export class TheaterGame {
                     border-radius: 8px;
                     font-size: 13px;
                 }
+                #objective {
+                    position: absolute;
+                    top: 58px;
+                    right: 16px;
+                    max-width: 280px;
+                    background: rgba(4,4,20,0.72);
+                    border-left: 3px solid #ffd700;
+                    color: #fff4cf;
+                    padding: 9px 12px;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    line-height: 1.35;
+                }
+                #settings-button {
+                    position: absolute;
+                    top: 16px;
+                    left: 16px;
+                    border: 1px solid rgba(255,215,0,0.7);
+                    border-radius: 8px;
+                    background: rgba(0,0,0,0.72);
+                    color: #fff4cf;
+                    padding: 9px 13px;
+                    cursor: pointer;
+                }
+                #settings-panel {
+                    display: none;
+                    position: absolute;
+                    top: 58px;
+                    left: 16px;
+                    width: min(320px, calc(100vw - 60px));
+                    padding: 14px;
+                    border: 1px solid rgba(255,215,0,0.6);
+                    border-radius: 10px;
+                    background: rgba(2,2,16,0.92);
+                    color: white;
+                    backdrop-filter: blur(10px);
+                }
+                #settings-panel.open { display: block; }
+                #settings-panel label { display: block; font-size: 13px; margin-bottom: 8px; }
+                .settings-heading {
+                    margin: 0 0 10px;
+                    color: #ffd700;
+                    font-size: 14px;
+                    letter-spacing: 0.03em;
+                }
+                .settings-section + .settings-section {
+                    margin-top: 14px;
+                    padding-top: 14px;
+                    border-top: 1px solid rgba(255,255,255,0.14);
+                }
+                .controls-list {
+                    display: grid;
+                    grid-template-columns: max-content 1fr;
+                    gap: 7px 12px;
+                    margin: 0;
+                    font-size: 12px;
+                    line-height: 1.35;
+                }
+                .controls-list dt {
+                    color: #fff4cf;
+                    font-weight: 700;
+                }
+                .controls-list dd {
+                    margin: 0;
+                    color: rgba(255,255,255,0.76);
+                }
+                #camera-sensitivity { width: 100%; accent-color: #df3f8b; }
+                #sensitivity-value { color: #ffd700; font-weight: 700; }
                 #hint {
                     position: absolute;
                     bottom: 20px;
@@ -186,18 +301,15 @@ export class TheaterGame {
                 #hint.show {
                     opacity: 1;
                 }
-                #currency {
-                    position: absolute;
-                    bottom: 20px;
-                    left: 20px;
-                    background: rgba(0,0,0,0.65);
+                .inv-slot-currency {
+                    border-color: rgba(255,215,0,0.3);
+                    cursor: default;
+                }
+                .inv-label {
+                    font-size: 11px;
                     color: #ffd700;
-                    padding: 8px 16px;
-                    border-radius: 10px;
-                    font-size: 15px;
                     font-weight: bold;
-                    backdrop-filter: blur(8px);
-                    letter-spacing: 0.5px;
+                    margin-top: 2px;
                 }
                 #dialogue-panel {
                     display: none;
@@ -274,6 +386,42 @@ export class TheaterGame {
                 #click-prompt span {
                     color: #ffd700;
                 }
+                #cinema-game-overlay {
+                    display: none;
+                    position: fixed;
+                    inset: 0;
+                    z-index: 500;
+                    background: #020210;
+                    pointer-events: auto;
+                }
+                #cinema-game-toolbar {
+                    height: 56px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 0 18px;
+                    color: white;
+                    background: linear-gradient(90deg, #060885, #1a0730);
+                    border-bottom: 2px solid #df3f8b;
+                    box-sizing: border-box;
+                }
+                #cinema-game-toolbar strong { color: #ffd86b; letter-spacing: 0.06em; }
+                #return-to-cinema {
+                    border: 1px solid #ffd86b;
+                    border-radius: 999px;
+                    background: rgba(255,216,107,0.12);
+                    color: #fff4c8;
+                    padding: 9px 18px;
+                    font-weight: 700;
+                    cursor: pointer;
+                }
+                #return-to-cinema:hover { background: rgba(255,216,107,0.25); }
+                #cinema-game-frame {
+                    width: 100%;
+                    height: calc(100% - 56px);
+                    border: 0;
+                    background: #050510;
+                }
                 .arcade-overlay {
                     display: none;
                     position: absolute;
@@ -330,14 +478,76 @@ export class TheaterGame {
                 .plinko-slot { padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.06); }
                 .plinko-slot-jackpot { color: #55fc77; background: rgba(85,252,119,0.12); }
                 .plinko-slot-bust { color: #ff4444; }
+                #inventory-bar {
+                    position: absolute;
+                    bottom: 20px;
+                    right: 20px;
+                    display: flex;
+                    gap: 6px;
+                    pointer-events: auto;
+                }
+                .inv-slot {
+                    width: 52px;
+                    height: 52px;
+                    background: rgba(0,0,0,0.65);
+                    border: 2px solid rgba(255,255,255,0.15);
+                    border-radius: 8px;
+                    backdrop-filter: blur(8px);
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    position: relative;
+                    transition: border-color 0.2s;
+                }
+                .inv-slot.equipped {
+                    border-color: #ffd700;
+                    box-shadow: 0 0 10px rgba(255,215,0,0.35);
+                }
+                .inv-slot.selected {
+                    outline: 2px solid rgba(255,255,255,0.85);
+                    outline-offset: 2px;
+                }
+                .inv-slot:hover { border-color: rgba(255,255,255,0.4); }
+                .inv-emoji { font-size: 24px; line-height: 1; }
+                .inv-count {
+                    font-size: 10px;
+                    color: #ccc;
+                    position: absolute;
+                    bottom: 3px;
+                    right: 5px;
+                }
             </style>
             <div id="topbar">
                 <h1>🎬 Kai's Cinema</h1>
-                <p><b>WASD</b> Move • <b>Mouse</b> Look • <b>Space</b> Jump/Interact • <b>E</b> Play</p>
             </div>
             <div id="location">📍 Loading...</div>
+            <div id="objective">Objective: explore the cinema</div>
+            <button id="settings-button" type="button" aria-expanded="false" aria-controls="settings-panel">⚙ Settings</button>
+            <div id="settings-panel">
+                <section class="settings-section" aria-labelledby="controls-heading">
+                    <h2 class="settings-heading" id="controls-heading">Controls</h2>
+                    <dl class="controls-list">
+                        <dt>W / S</dt><dd>Forward / back</dd>
+                        <dt>A / ←</dt><dd>Move right</dd>
+                        <dt>D / →</dt><dd>Move left</dd>
+                        <dt>Mouse</dt><dd>Look around</dd>
+                        <dt>Right-click</dt><dd>Talk</dd>
+                        <dt>Space</dt><dd>Jump</dd>
+                        <dt>E</dt><dd>Play / sit</dd>
+                        <dt>U</dt><dd>Use / pay</dd>
+                    </dl>
+                </section>
+                <section class="settings-section" aria-labelledby="camera-heading">
+                    <h2 class="settings-heading" id="camera-heading">Camera</h2>
+                    <label for="camera-sensitivity">Sensitivity: <span id="sensitivity-value">1.00×</span></label>
+                    <input id="camera-sensitivity" type="range" min="0.35" max="2.25" step="0.05" value="1">
+                    <small style="opacity:.7">Lower is steadier; higher turns faster.</small>
+                </section>
+            </div>
             <div id="hint"></div>
-            <div id="currency">$ 25  🎟 0</div>
+            <div id="inventory-bar"></div>
             <div id="crosshair"></div>
             <div id="dialogue-panel">
                 <div id="dialogue-speaker"></div>
@@ -387,25 +597,75 @@ export class TheaterGame {
                 <span>Click to Start</span><br>
                 <small style="opacity: 0.7">Click anywhere to capture mouse</small>
             </div>
+            <div id="cinema-game-overlay" aria-hidden="true">
+                <div id="cinema-game-toolbar">
+                    <strong id="cinema-game-title">NOW PLAYING</strong>
+                    <span>Esc or the button returns you to the exact seat you left.</span>
+                    <button id="return-to-cinema" type="button">← Return to cinema</button>
+                </div>
+                <iframe id="cinema-game-frame" title="Cinema game"></iframe>
+            </div>
         `;
         document.body.appendChild(ui);
 
         this.uiElements = {
             location: document.getElementById('location'),
+            objective: document.getElementById('objective'),
             hint: document.getElementById('hint'),
             clickPrompt: document.getElementById('click-prompt'),
-            currency: document.getElementById('currency'),
+            inventoryBar: document.getElementById('inventory-bar'),
             dialoguePanel: document.getElementById('dialogue-panel'),
             dialogueSpeaker: document.getElementById('dialogue-speaker'),
             dialogueText: document.getElementById('dialogue-text'),
             dialogueOptions: document.getElementById('dialogue-options'),
+            gameOverlay: document.getElementById('cinema-game-overlay'),
+            gameFrame: document.getElementById('cinema-game-frame'),
+            gameTitle: document.getElementById('cinema-game-title'),
         };
+
+        document.getElementById('return-to-cinema').addEventListener('click', () => this.closeGame());
+        this.uiElements.clickPrompt.addEventListener('click', () => {
+            this.renderer.domElement.requestPointerLock();
+        });
+        this.uiElements.gameFrame.addEventListener('load', () => {
+            if (!this.gameOpen) return;
+            try {
+                this.uiElements.gameFrame.contentWindow.addEventListener('keydown', event => {
+                    if (event.code === 'Escape') this.closeGame();
+                });
+            } catch (error) {
+                console.warn('The embedded game uses a different origin; use the visible return button.', error);
+            }
+        });
+        const sensitivityInput = document.getElementById('camera-sensitivity');
+        const sensitivityValue = document.getElementById('sensitivity-value');
+        sensitivityInput.value = String(Settings.get('cameraSensitivity') ?? 1);
+        sensitivityValue.textContent = `${Number(sensitivityInput.value).toFixed(2)}×`;
+        document.getElementById('settings-button').addEventListener('click', event => {
+            event.stopPropagation();
+            document.exitPointerLock();
+            const panel = document.getElementById('settings-panel');
+            const isOpen = panel.classList.toggle('open');
+            event.currentTarget.setAttribute('aria-expanded', String(isOpen));
+        });
+        sensitivityInput.addEventListener('input', event => {
+            const value = Number(event.target.value);
+            Settings.add('cameraSensitivity', value);
+            localStorage.setItem('kai-camera-sensitivity', String(value));
+            sensitivityValue.textContent = `${value.toFixed(2)}×`;
+        });
+        window.addEventListener('keydown', (event) => {
+            if (event.code === 'Escape' && this.gameOpen) {
+                event.preventDefault();
+                this.closeGame();
+            }
+        }, true);
 
         // Hide prompt when mouse is locked
         document.addEventListener('pointerlockchange', () => {
             if (document.pointerLockElement) {
                 this.uiElements.clickPrompt.classList.add('hidden');
-            } else if (!this.arcadeOpen) {
+            } else if (!this.arcadeOpen && !this.gameOpen && !this.dialogueOpen && !document.getElementById('settings-panel').classList.contains('open')) {
                 this.uiElements.clickPrompt.classList.remove('hidden');
             }
         });
@@ -423,7 +683,7 @@ export class TheaterGame {
     }
 
     updateWalletUI() {
-        this.uiElements.currency.textContent = `$ ${this.currency}  🎟 ${this.tickets}`;
+        this.updateInventoryUI();
     }
 
     collectBill(id) {
@@ -449,6 +709,8 @@ export class TheaterGame {
         this.uiElements.dialogueOptions.innerHTML = options.map(o => `<div>${o.label}</div>`).join('');
         this.uiElements.dialoguePanel.style.display = 'block';
         this._dialogueOptions = options;
+        this.activity.conversations.add(speaker.replace(/^[^\p{L}]*/u, '').split('—')[0].trim());
+        this._speakDialogue(speaker, text);
     }
 
     closeDialogue() {
@@ -456,6 +718,7 @@ export class TheaterGame {
         this._dialogueLockYaw = undefined;
         this.uiElements.dialoguePanel.style.display = 'none';
         this._dialogueOptions = null;
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
         if (this._dialogueHasCamera) {
             this.cameraDistance = this._preDialogueDist;
             this.cameraHeight = this._preDialogueHeight;
@@ -469,6 +732,29 @@ export class TheaterGame {
         this.uiElements.dialogueText.textContent = text;
         this.uiElements.dialogueOptions.innerHTML = options.map(o => `<div>${o.label}</div>`).join('');
         this._dialogueOptions = options;
+        this._speakDialogue(speaker, text);
+    }
+
+    _speakDialogue(speaker, text) {
+        if (!('speechSynthesis' in window)) return;
+        window.speechSynthesis.cancel();
+        const cleanText = text
+            .replace(/["*]/g, '')
+            .replace(/\p{Extended_Pictographic}/gu, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        if (!cleanText) return;
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        const sinister = speaker.includes('Iris');
+        utterance.rate = sinister ? 0.72 : 0.96;
+        utterance.pitch = sinister ? 0.35 : 1.0;
+        utterance.volume = sinister ? 0.82 : 0.72;
+        const voices = window.speechSynthesis.getVoices();
+        const preferred = voices.find(v => sinister
+            ? /daniel|fred|male|english.*uk/i.test(`${v.name} ${v.lang}`)
+            : /samantha|serena|english/i.test(`${v.name} ${v.lang}`));
+        if (preferred) utterance.voice = preferred;
+        window.speechSynthesis.speak(utterance);
     }
 
     _openTicketConversation() {
@@ -564,22 +850,17 @@ export class TheaterGame {
     }
 
     _buyTickets(count, cost) {
-        if (this.currency >= cost) {
-            this.currency -= cost;
-            this.tickets += count;
-            this.updateWalletUI();
-            this.closeDialogue();
-            const ticketWord = count === 1 ? 'ticket' : 'tickets';
-            this.showHint(`Bought ${count} ${ticketWord} for $${cost}!`, 2500);
-        } else {
-            this._transitionDialogue(
-                '🎟️ Gerald the Ticket Seller',
-                `"Hmm, you need $${cost} for that but you only have $${this.currency}.\nCan't help you there, friend."`,
-                [
-                    { key: 'Escape', label: '[Esc] Okay, goodbye', action: () => this.closeDialogue() },
-                ]
-            );
-        }
+        const ticketWord = count === 1 ? 'ticket' : 'tickets';
+        this.closeDialogue();
+        this.pendingPurchase = {
+            cost,
+            onConfirm: () => {
+                this.tickets += count;
+                this.updateWalletUI();
+                this.showHint(`Bought ${count} ${ticketWord} for $${cost}! 🎟`, 2500);
+            },
+        };
+        this.showHint(`Select 💵 and press U to pay $${cost} for ${count} ${ticketWord}`, 4000);
     }
 
     _openCheckInConversation() {
@@ -588,7 +869,7 @@ export class TheaterGame {
         this._preDialogueHeight = this.cameraHeight;
         this._preDialogueSmooth = this.cameraSmoothing;
         this._dialogueHasCamera = true;
-        this.player.cameraYaw = Math.atan2(-20 - pPos.x, -2 - pPos.z);
+        this.player.cameraYaw = Math.atan2(-20 - pPos.x, 14.5 - pPos.z);
         this.cameraDistance = 6;
         this.cameraHeight = 2.5;
         this.cameraSmoothing = 0.05;
@@ -630,10 +911,10 @@ export class TheaterGame {
 
     _checkInDirections(theater) {
         const d = {
-            theater1: '"Age of War is in Theater 1!\nHead to the back-LEFT corner of the lobby.\nLook for the orange-red glowing arch — you can\'t miss it.\nIt radiates serious battle energy!"',
-            theater2: '"Blast Block is in Theater 2!\nHead to the back-RIGHT corner of the lobby.\nFollow the blue glow down that hallway.\nPuzzle fans love it in there!"',
-            theater3: '"Stick Soccer is in Theater 3!\nHead to the front-LEFT corner — follow the green arch.\nKick-off is whenever you walk through!"',
-            theater4: '"Snake Game is in Theater 4!\nFront-RIGHT corner, mint-green arch.\nThe snake gets fast. Watch that tail!"',
+            theater1: '"Age of War is Screen 1. Take the labeled BACK HALL door, then the first gold-framed door on your left."',
+            theater2: '"Blast Block is Screen 2. Take the BACK HALL door; its blue marquee is first on your right."',
+            theater3: '"Stick Soccer is Screen 3, farther down the back hall on the left. Follow the green marquee."',
+            theater4: '"Snake Game is Screen 4, farther down the back hall on the right. Follow the mint marquee."',
         };
 
         this._transitionDialogue(
@@ -657,6 +938,446 @@ export class TheaterGame {
         );
     }
 
+    _openConcessionConversation() {
+        const pPos = this.player.getPosition();
+        this._preDialogueDist = this.cameraDistance;
+        this._preDialogueHeight = this.cameraHeight;
+        this._preDialogueSmooth = this.cameraSmoothing;
+        this._dialogueHasCamera = true;
+        const concessionTarget = this.locationName === 'backhall'
+            ? { x: 6.5, z: 23.5 }
+            : { x: 20, z: 14.5 };
+        this.player.cameraYaw = Math.atan2(concessionTarget.x - pPos.x, concessionTarget.z - pPos.z);
+        this.cameraDistance = 6;
+        this.cameraHeight = 2.5;
+        this.cameraSmoothing = 0.05;
+
+        this.openDialogue(
+            '🍕 Benny — Concession Stand',
+            '"Step right up! What can Benny get for ya tonight?"',
+            [
+                { key: 'KeyE',   label: '[E] What\'s on the menu?',     action: () => this._concessionMenu() },
+                { key: 'KeyQ',   label: '[Q] What do you recommend?',   action: () => this._concessionRecommend() },
+                { key: 'Escape', label: '[Esc] Just browsing, thanks.', action: () => this.closeDialogue() },
+            ]
+        );
+    }
+
+    _concessionMenu() {
+        this._transitionDialogue(
+            '🍕 Benny — Concession Stand',
+            '"Tonight\'s menu:\n🍕 Pizza — $4\n🥤 Soda — $3\n🍟 Fries — $2\n🍔 Hamburger — $5\n\nWhat\'re you feeling?"',
+            [
+                { key: 'KeyE',   label: '[E] 🍕 Pizza — $4',       action: () => this._concessionConfirm('Pizza', 4) },
+                { key: 'KeyQ',   label: '[Q] 🥤 Soda — $3',        action: () => this._concessionConfirm('Soda', 3) },
+                { key: 'KeyR',   label: '[R] 🍟 Fries — $2',       action: () => this._concessionConfirm('Fries', 2) },
+                { key: 'KeyF',   label: '[F] 🍔 Hamburger — $5',   action: () => this._concessionConfirm('Hamburger', 5) },
+            ]
+        );
+    }
+
+    _concessionRecommend() {
+        this._transitionDialogue(
+            '🍕 Benny — Concession Stand',
+            '"Honestly? The burger. Every time.\nI don\'t make the rules — it\'s just the best thing on the menu."',
+            [
+                { key: 'KeyE',   label: '[E] Sold. Show me the menu.',  action: () => this._concessionMenu() },
+                { key: 'Escape', label: '[Esc] I\'ll think about it.',   action: () => this.closeDialogue() },
+            ]
+        );
+    }
+
+    _concessionConfirm(item, cost) {
+        const lines = {
+            'Pizza':     '"One slice coming right up — careful, it\'s hot."',
+            'Soda':      '"One soda, coming right up!"',
+            'Fries':     '"Fries, great call. Nothing beats \'em during a film."',
+            'Hamburger': '"One burger — I\'ll make it a good one."',
+        };
+        const line = lines[item] ?? `"${item}, coming right up!"`;
+        this._transitionDialogue(
+            '🍕 Benny — Concession Stand',
+            `${line}\n\nThat'll be $${cost}.`,
+            [
+                { key: 'KeyE',   label: `[E] Buy ${item} — $${cost}`,  action: () => this._concessionBuy(item, cost) },
+                { key: 'Escape', label: '[Esc] Actually, never mind',  action: () => this._concessionMenu() },
+            ]
+        );
+    }
+
+    _concessionBuy(item, cost) {
+        this.closeDialogue();
+        this.pendingPurchase = {
+            cost,
+            onConfirm: () => {
+                this.addToInventory(item);
+                this.showHint(`Benny hands you a ${item}. Enjoy the show! 🎬`, 3000);
+            },
+        };
+        this.showHint(`Select 💵 and press U to pay $${cost} for ${item}`, 4000);
+    }
+
+    // ── Mysterious Stranger ──────────────────────────────────────────────────
+
+    _openStrangerConversation() {
+        const pPos = this.player.getPosition();
+        this._preDialogueDist   = this.cameraDistance;
+        this._preDialogueHeight = this.cameraHeight;
+        this._preDialogueSmooth = this.cameraSmoothing;
+        this._dialogueHasCamera = true;
+        this.player.cameraYaw = Math.atan2(13 - pPos.x, -5 - pPos.z);
+        this.cameraDistance = 6;
+        this.cameraHeight   = 2.5;
+        this.cameraSmoothing = 0.05;
+
+        if (this.strangerFed) {
+            this._strangerPostFeed();
+        } else {
+            this._strangerInitial();
+        }
+    }
+
+    _strangerInitial() {
+        this.openDialogue(
+            '...',
+            '*A man sits still on the bench, watching the fountain.\nAfter a moment, he notices you.*',
+            [
+                { key: 'KeyE',   label: '[E] "Are you alright?"', action: () => this._strangerAreYouOkay() },
+                { key: 'KeyQ',   label: '[Q] "Who are you?"',     action: () => this._strangerWhoAreYou() },
+                { key: 'Escape', label: '[Esc] Walk away',        action: () => this.closeDialogue() },
+            ]
+        );
+    }
+
+    _strangerWhoAreYou() {
+        this._transitionDialogue(
+            '...',
+            '"...Does it matter?\nNames are for people who intend to leave."',
+            [
+                { key: 'KeyE',   label: '[E] "Are you alright?"', action: () => this._strangerAreYouOkay() },
+                { key: 'Escape', label: '[Esc] Walk away',        action: () => this.closeDialogue() },
+            ]
+        );
+    }
+
+    _strangerAreYouOkay() {
+        const food = this.inventory.find(i => TheaterGame.ITEM_DEFS[i.name]?.format !== null);
+        const options = [];
+        if (food) {
+            options.push({ key: 'KeyE', label: `[E] "Here — take some of my ${TheaterGame.ITEM_DEFS[food.name].emoji} ${food.name}."`, action: () => this._strangerFeedGive(food.name) });
+            options.push({ key: 'KeyQ', label: '[Q] "Sealed off the back?"', action: () => this._strangerSealedBack() });
+        } else {
+            options.push({ key: 'KeyE', label: '[E] "Sealed off the back?"', action: () => this._strangerSealedBack() });
+        }
+        options.push({ key: 'Escape', label: '[Esc] Walk away', action: () => this.closeDialogue() });
+
+        this._transitionDialogue(
+            '...',
+            '"I get by. Haven\'t eaten in a while, but...\nUsed to come here every week, before they changed things.\nBefore they sealed off the back."',
+            options
+        );
+    }
+
+    _strangerSealedBack() {
+        const food = this.inventory.find(i => TheaterGame.ITEM_DEFS[i.name]?.format !== null);
+        const options = [];
+        if (food) {
+            options.push({ key: 'KeyE', label: `[E] "Here — take some of my ${TheaterGame.ITEM_DEFS[food.name].emoji} ${food.name}."`, action: () => this._strangerFeedGive(food.name) });
+            options.push({ key: 'KeyQ', label: '[Q] "What happened to the key?"', action: () => this._strangerKeyGone() });
+        } else {
+            options.push({ key: 'KeyE', label: '[E] "What happened to the key?"', action: () => this._strangerKeyGone() });
+        }
+        options.push({ key: 'Escape', label: '[Esc] Walk away', action: () => this.closeDialogue() });
+
+        this._transitionDialogue(
+            '...',
+            '"*looks toward the far wall for a long moment*\nThere\'s a door. Most people look right through it.\nToo busy watching the screens.\n...God, I\'m hungry. Anyway. I don\'t have the key anymore."',
+            options
+        );
+    }
+
+    _strangerKeyGone() {
+        this._transitionDialogue(
+            '...',
+            '"...I gave it away. Same as everything else.\nThat\'s what you do, eventually.\nYou give things away."',
+            [
+                { key: 'Escape', label: '[Esc] Walk away', action: () => this.closeDialogue() },
+            ]
+        );
+    }
+
+    _strangerFeedGive(foodName) {
+        this.useItem(foodName);
+        this.addToInventory('OldKey');
+        this.strangerFed = true;
+
+        this._transitionDialogue(
+            '...',
+            '"*takes it without looking at it. holds it a moment.*\n\n...I didn\'t expect that.\n\n*a long pause*\n\n...Keep this.\nI don\'t need it anymore.\nBut you —\nyou look like someone who stops to look at things."\n\n*He presses something into your hand.\n You don\'t examine it until he looks away.*',
+            [
+                { key: 'KeyE',   label: '[E] "What does it open?"', action: () => this._strangerWhatDoes() },
+                { key: 'Escape', label: '[Esc] Walk away',          action: () => this.closeDialogue() },
+            ]
+        );
+    }
+
+    _strangerWhatDoes() {
+        this._transitionDialogue(
+            '...',
+            '"...You\'ll know when you find it.\nOr you won\'t.\n\nSome things are meant to be found\nby people who slow down long enough to look."',
+            [
+                { key: 'Escape', label: '[Esc] Walk away', action: () => this.closeDialogue() },
+            ]
+        );
+    }
+
+    _strangerPostFeed() {
+        this.openDialogue(
+            '...',
+            '"*notices you. a small nod.*\n...Still here."',
+            [
+                { key: 'KeyE',   label: '[E] "What\'s behind that door?"', action: () => this._strangerPostFeedDoor() },
+                { key: 'Escape', label: '[Esc] Walk away',                 action: () => this.closeDialogue() },
+            ]
+        );
+    }
+
+    _strangerPostFeedDoor() {
+        this._transitionDialogue(
+            '...',
+            '"*looks toward the far wall.*\n*says nothing.*\n*smiles faintly.*"',
+            [
+                { key: 'Escape', label: '[Esc] Walk away', action: () => this.closeDialogue() },
+            ]
+        );
+    }
+
+    _openIrisConversation() {
+        const p = this.player.getPosition();
+        this._preDialogueDist = this.cameraDistance;
+        this._preDialogueHeight = this.cameraHeight;
+        this._preDialogueSmooth = this.cameraSmoothing;
+        this._dialogueHasCamera = true;
+        this.player.cameraYaw = Math.atan2(-p.x, -p.z);
+        this.cameraDistance = 5;
+        this.cameraHeight = 3.4;
+        this.cameraSmoothing = 0.04;
+
+        const games = [...this.activity.gamesPlayed];
+        const people = [...this.activity.conversations].filter(n => n && !n.includes('Iris'));
+        const memory = [
+            `You carry $${this.currency} and ${this.tickets} ticket${this.tickets === 1 ? '' : 's'}.`,
+            games.length ? `You have entered ${games.join(', ')}.` : 'You have not entered a screening. Yet.',
+            people.length ? `You have spoken to ${people.join(', ')}.` : 'The staff still do not know your voice.',
+            this.strangerFed ? 'You fed the one on the bench. He gave you the old key.' : 'The hungry one on the bench is still waiting.',
+            this.activity.caveVisits ? `You survived the lava cave ${this.activity.caveVisits} time${this.activity.caveVisits === 1 ? '' : 's'}.` : 'You have not yet fallen beneath the street.',
+        ].join('\n');
+
+        this.openDialogue(
+            '◉ The Iris',
+            `"They all call me The Iris. They pretend I am decoration.\nI am the cinema's witness.\n\n${memory}\n\nI remember what the building is told to forget."`,
+            [
+                { key: 'KeyE', label: '[E] What are your sinister activities?', action: () => this._irisSecret() },
+                { key: 'KeyQ', label: '[Q] What should I do next?', action: () => this._irisNext() },
+                { key: 'Escape', label: '[Esc] Break eye contact', action: () => this.closeDialogue() },
+            ]
+        );
+    }
+
+    _irisSecret() {
+        this._transitionDialogue(
+            '◉ The Iris',
+            '"I count unpaid admissions. I open doors that management sealed. I keep a copy of every choice made under this roof.\n\nGerald calls that sinister. Rita calls it impossible. The officer calls it evidence."',
+            [{ key: 'Escape', label: '[Esc] Back away slowly', action: () => this.closeDialogue() }]
+        );
+    }
+
+    _irisNext() {
+        const next = this.activity.gamesPlayed.size === 0
+            ? 'Buy a ticket, unlock the back hall, take a seat, and begin a screening.'
+            : this.activity.caveVisits === 0
+                ? 'The dumpster outside is not merely a dumpster.'
+                : this.unlockedRewards.has('Critic Pass')
+                    ? 'Your Critic Pass has opened a path most guests never see.'
+                    : 'Three different screenings will earn you a pass. I will know when it happens.';
+        this._transitionDialogue(
+            '◉ The Iris',
+            `"${next}"`,
+            [{ key: 'Escape', label: '[Esc] Leave', action: () => this.closeDialogue() }]
+        );
+    }
+
+    _openPoliceConversation() {
+        const unpaid = this.activity.unpaidMovies.size;
+        if (unpaid === 0) {
+            this.openDialogue(
+                '🛡 Officer Vale — Cinema Security',
+                '"Tickets in order. Keep the aisles clear, and do not believe everything the eye tells you."',
+                [{ key: 'Escape', label: '[Esc] Carry on', action: () => this.closeDialogue() }]
+            );
+            return;
+        }
+        this.openDialogue(
+            '🛡 Officer Vale — Cinema Security',
+            `"The Iris logged ${unpaid} unpaid screening${unpaid === 1 ? '' : 's'} under your face.\nBail is $10. Otherwise, you are coming with me."`,
+            [
+                { key: 'KeyE', label: '[E] Pay $10 bail now', action: () => this._payPoliceBail() },
+                { key: 'KeyQ', label: '[Q] Refuse and go to holding', action: () => this._sendToJail() },
+                { key: 'Escape', label: '[Esc] Try to leave', action: () => this._sendToJail() },
+            ]
+        );
+    }
+
+    _payPoliceBail() {
+        if (this.currency < 10) {
+            this._transitionDialogue(
+                '🛡 Officer Vale — Cinema Security',
+                '"You do not have enough. Holding cell."',
+                [{ key: 'KeyE', label: '[E] Go to holding', action: () => this._sendToJail() }]
+            );
+            return;
+        }
+        this.currency -= 10;
+        this.activity.bailPaid += 10;
+        this.activity.unpaidMovies.clear();
+        this.updateWalletUI();
+        this.closeDialogue();
+        this.showHint('Bail paid. Your admission record is clear.', 3500);
+    }
+
+    _sendToJail() {
+        this.closeDialogue();
+        this.loadLocation('jail');
+    }
+
+    _useKeyOnBackDoor() {
+        const hasKey = this.inventory.some(i => i.name === 'OldKey');
+        if (!hasKey) {
+            this.showHint('Locked. The man on the bench may know where the key went.', 4000);
+            return;
+        }
+        this.closeDialogue();
+        this.loadLocation('backhall');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
+    addToInventory(itemName) {
+        const existing = this.inventory.find(i => i.name === itemName);
+        if (existing) existing.count++;
+        else this.inventory.push({ name: itemName, count: 1 });
+        this.updateInventoryUI();
+        const def = TheaterGame.ITEM_DEFS[itemName];
+        if (!this.equippedItem && def?.format !== null) this.equipItem(itemName);
+    }
+
+    equipItem(itemName) {
+        this.equippedItem = itemName;
+        this._loadItemModel(itemName);
+        this.updateInventoryUI();
+    }
+
+    _loadItemModel(itemName) {
+        const def = TheaterGame.ITEM_DEFS[itemName];
+        if (!def || def.format === null) return;
+        this.player.detachHeldItem();
+        if (def.format === 'fbx') {
+            new FBXLoader().load(def.path, (fbx) => {
+                fbx.scale.setScalar(def.scale);
+                this.player.attachItemToHand(fbx);
+            });
+        } else {
+            const mtlLoader = new MTLLoader();
+            mtlLoader.load(def.mtl, (mats) => {
+                mats.preload();
+                const objLoader = new OBJLoader();
+                objLoader.setMaterials(mats);
+                objLoader.load(def.path, (mesh) => {
+                    mesh.scale.setScalar(def.scale);
+                    this.player.attachItemToHand(mesh);
+                });
+            });
+        }
+    }
+
+    useItem(itemName) {
+        const entry = this.inventory.find(i => i.name === itemName);
+        if (!entry) return;
+        if (TheaterGame.ITEM_DEFS[itemName]?.format === null) {
+            this.showHint(`${itemName} is a permanent key item.`, 2200);
+            return;
+        }
+        this._applyItemEffect(itemName);
+        entry.count--;
+        if (entry.count <= 0) this.inventory.splice(this.inventory.indexOf(entry), 1);
+        if (this.equippedItem === itemName && !this.inventory.find(i => i.name === itemName)) {
+            this.equippedItem = null;
+            this.player.detachHeldItem();
+            if (this.inventory.length > 0) this.equipItem(this.inventory[0].name);
+        }
+        this.updateInventoryUI();
+    }
+
+    _applyItemEffect(itemName) {
+        // Future: buff effects and secret-area unlocks go here
+    }
+
+    updateInventoryUI() {
+        const bar = this.uiElements.inventoryBar;
+        bar.innerHTML = '';
+
+        // Fixed slots: money (index 0) and tickets (index 1)
+        const moneySlot = document.createElement('div');
+        moneySlot.className = 'inv-slot inv-slot-currency' + (this.selectedSlot === 0 ? ' selected' : '');
+        moneySlot.title = 'Money';
+        moneySlot.innerHTML = `<span class="inv-emoji">💵</span><span class="inv-label">$${this.currency}</span>`;
+        bar.appendChild(moneySlot);
+
+        const ticketSlot = document.createElement('div');
+        ticketSlot.className = 'inv-slot inv-slot-currency' + (this.selectedSlot === 1 ? ' selected' : '');
+        ticketSlot.title = 'Tickets';
+        ticketSlot.innerHTML = `<span class="inv-emoji">🎟️</span><span class="inv-label">${this.tickets}</span>`;
+        bar.appendChild(ticketSlot);
+
+        // Food/item slots (indices 2-7)
+        const MAX_SLOTS = 6;
+        for (let i = 0; i < MAX_SLOTS; i++) {
+            const item = this.inventory[i];
+            const slotIndex = i + 2;
+            let cls = 'inv-slot';
+            if (item && this.equippedItem === item.name) cls += ' equipped';
+            if (this.selectedSlot === slotIndex) cls += ' selected';
+            const slot = document.createElement('div');
+            slot.className = cls;
+            if (item) {
+                const def = TheaterGame.ITEM_DEFS[item.name] ?? {};
+                slot.innerHTML = `<span class="inv-emoji">${def.emoji ?? '?'}</span><span class="inv-count">×${item.count}</span>`;
+                slot.title = item.name;
+                slot.addEventListener('click', () => {
+                    this.selectedSlot = slotIndex;
+                    this._onSlotSelected();
+                });
+            }
+            bar.appendChild(slot);
+        }
+        if (this.activity && this.uiElements.objective) this.updateObjectiveUI();
+    }
+
+    _onSlotSelected() {
+        const foodIdx = this.selectedSlot - 2;
+        if (foodIdx >= 0 && foodIdx < this.inventory.length) {
+            this.equipItem(this.inventory[foodIdx].name);
+        } else if (foodIdx >= 0) {
+            // Selected an empty food slot — unequip held item
+            this.equippedItem = null;
+            this.player.detachHeldItem();
+            this.updateInventoryUI();
+        } else {
+            // Money or ticket slot selected — just refresh highlight
+            this.updateInventoryUI();
+        }
+    }
+
     clearHint() {
         clearTimeout(this.hintTimeout);
         this.uiElements.hint.classList.remove('show');
@@ -667,8 +1388,8 @@ export class TheaterGame {
         const s = this.nearSeat;
         this.currentSeatPos = { x: s.x, z: s.z, seatY: s.seatY, meshRot: s.meshRot, camYaw: s.camYaw };
 
-        // Squish player to look seated
-        this.player.mesh.scale.set(1.05, 0.72, 1.05);
+        // Play sitting animation
+        this.player.setSitting(true);
 
         // Orient camera toward the seat's facing direction initially
         this.player.cameraYaw = s.camYaw ?? Math.PI;
@@ -683,15 +1404,16 @@ export class TheaterGame {
         this.cameraSmoothing = 0.04;
 
         // Persist "stand up" hint while seated
-        this.showHint('Press E to stand up', 9999999);
+        const canPlay = this.currentLocation?.getGameUrl?.();
+        this.showHint(canPlay ? 'You are seated • Space plays the screening • E stands' : 'You are seated • E stands', 9999999);
     }
 
     standUp() {
         this.isSitting = false;
         this.currentSeatPos = null;
 
-        // Restore normal scale
-        this.player.mesh.scale.set(1, 1, 1);
+        // Return to locomotion animations
+        this.player.setSitting(false);
 
         // Restore camera
         this.cameraDistance = this._preSitDist ?? 10;
@@ -713,6 +1435,38 @@ export class TheaterGame {
 
     setLocationUI(name) {
         this.uiElements.location.textContent = `📍 ${name}`;
+    }
+
+    updateObjectiveUI() {
+        let objective = 'Talk to Gerald outside and buy a ticket.';
+        if (this.tickets > 0 && !this.inventory.some(i => i.name === 'OldKey')) {
+            objective = 'Talk to the man on the lobby bench; food may earn his trust.';
+        } else if (this.inventory.some(i => i.name === 'OldKey') && this.activity.gamesPlayed.size === 0) {
+            objective = 'Unlock the BACK HALL, choose a screen, and take a seat.';
+        } else if (this.activity.gamesPlayed.size > 0 && this.activity.gamesPlayed.size < 3) {
+            objective = `Play ${3 - this.activity.gamesPlayed.size} more different screening${3 - this.activity.gamesPlayed.size === 1 ? '' : 's'} to unlock the Critic Pass.`;
+        } else if (this.unlockedRewards.has('Critic Pass')) {
+            objective = 'Critic Pass unlocked. Ask The Iris what it has witnessed.';
+        }
+        if (this.activity.unpaidMovies.size) objective = 'Security alert: settle your unpaid admission or face the holding cell.';
+        this.uiElements.objective.textContent = `Objective: ${objective}`;
+    }
+
+    _queueLocation(name) {
+        if (!this._pendingLocation) this._pendingLocation = name;
+    }
+
+    _queueTheaterEntry(number) {
+        const theater = `theater${number}`;
+        if (this.tickets > 0) {
+            this.tickets--;
+            this.activity.moviesAttended.add(theater);
+            this.updateWalletUI();
+        } else {
+            this.activity.unpaidMovies.add(theater);
+            this.updateObjectiveUI();
+        }
+        this._queueLocation(theater);
     }
 
     loadLocation(name) {
@@ -738,6 +1492,16 @@ export class TheaterGame {
         this.nearPortal = false;
         this.nearTicket = false;
         this.nearCheckIn = false;
+        this.nearConcession = false;
+        this.nearStranger = false;
+        this.nearEye = false;
+        this.nearBackDoor = false;
+        this.nearHallExit = false;
+        this.nearPolice = false;
+        this.nearJailBail = false;
+        this.nearJailEscape = false;
+        this.nearHallTheater = 0;
+        this.nearPoster = null;
         this.nearArcade = 0;
         this.nearSeat = null;
         this.isSitting = false;
@@ -759,8 +1523,9 @@ export class TheaterGame {
                 this.currentLocation.setupMoneyPickups(this.collectedBills, (id) => this.collectBill(id));
                 this.currentLocation.setupDoorTrigger((event, trigger) => {
                     if (event === 'enter') {
-                        this.showHint('Press SPACE to enter the theater...', 5000);
+                        this.showHint('Entrance doors opening...', 1500);
                         this.nearDoor = true;
+                        this._queueLocation('lobby');
                     } else {
                         this.nearDoor = false;
                     }
@@ -777,11 +1542,20 @@ export class TheaterGame {
 
                 this.currentLocation.setupTicketTrigger((event) => {
                     if (event === 'enter') {
-                        this.showHint('Press E to talk to the ticket seller...', 4000);
+                        this.showHint('Right-click to talk to the ticket seller...', 4000);
                         this.nearTicket = true;
                     } else {
                         this.nearTicket = false;
                         if (this.dialogueOpen) this.closeDialogue();
+                    }
+                });
+
+                this.currentLocation.setupPosterTriggers((event, poster) => {
+                    if (event === 'enter') {
+                        this.nearPoster = poster;
+                        this.showHint(`Press SPACE to jump into ${poster.title}`, 5000);
+                    } else if (this.nearPoster === poster) {
+                        this.nearPoster = null;
                     }
                 });
 
@@ -806,61 +1580,21 @@ export class TheaterGame {
                 // Setup entrance trigger (to go back outside)
                 this.currentLocation.setupEntranceTrigger((event) => {
                     if (event === 'enter') {
-                        this.showHint('Press SPACE to exit to street...', 3000);
+                        this.showHint('Street doors opening...', 1500);
                         this.nearExit = true;
+                        this._queueLocation('exterior');
                     } else {
                         this.nearExit = false;
                     }
                 });
 
-                // Setup Theater 1 hallway trigger
-                this.currentLocation.setupTheater1Trigger((event) => {
-                    if (event === 'enter') {
-                        const note = this.tickets > 0 ? '(uses 1 ticket)' : '— need a ticket!';
-                        this.showHint(`Press SPACE to enter Theater 1: Age of War ${note}`, 4000);
-                        this.nearTheater1 = true;
-                    } else {
-                        this.nearTheater1 = false;
-                    }
-                });
-
-                // Setup Theater 2 hallway trigger
-                this.currentLocation.setupTheater2Trigger((event) => {
-                    if (event === 'enter') {
-                        const note = this.tickets > 0 ? '(uses 1 ticket)' : '— need a ticket!';
-                        this.showHint(`Press SPACE to enter Theater 2: Blast Block ${note}`, 4000);
-                        this.nearTheater2 = true;
-                    } else {
-                        this.nearTheater2 = false;
-                    }
-                });
-
-                // Setup Theater 3 hallway trigger
-                this.currentLocation.setupTheater3Trigger((event) => {
-                    if (event === 'enter') {
-                        const note = this.tickets > 0 ? '(uses 1 ticket)' : '— need a ticket!';
-                        this.showHint(`Press SPACE to enter Theater 3: Stick Soccer ${note}`, 4000);
-                        this.nearTheater3 = true;
-                    } else {
-                        this.nearTheater3 = false;
-                    }
-                });
-
-                // Setup Theater 4 hallway trigger
-                this.currentLocation.setupTheater4Trigger((event) => {
-                    if (event === 'enter') {
-                        const note = this.tickets > 0 ? '(uses 1 ticket)' : '— need a ticket!';
-                        this.showHint(`Press SPACE to enter Theater 4: Snake Game ${note}`, 4000);
-                        this.nearTheater4 = true;
-                    } else {
-                        this.nearTheater4 = false;
-                    }
-                });
+                // The former side-wall entrances are now illuminated game ads;
+                // all actual screen doors live together in the back hall.
 
                 // Setup check-in clerk trigger
                 this.currentLocation.setupCheckInTrigger((event) => {
                     if (event === 'enter') {
-                        this.showHint('Press E to chat with the check-in clerk...', 4000);
+                        this.showHint('Right-click to chat with the check-in clerk...', 4000);
                         this.nearCheckIn = true;
                     } else {
                         this.nearCheckIn = false;
@@ -868,14 +1602,64 @@ export class TheaterGame {
                     }
                 });
 
-                // Setup arcade cabinet triggers
+                // Setup concession stand trigger
+                this.currentLocation.setupConcessionTrigger((event) => {
+                    if (event === 'enter') {
+                        this.showHint('Right-click to order from the concession stand...', 4000);
+                        this.nearConcession = true;
+                    } else {
+                        this.nearConcession = false;
+                        if (this.dialogueOpen) this.closeDialogue();
+                    }
+                });
+
+                // The lobby cabinets are deliberately duplicated in the back
+                // hall so the gambling games stay discoverable before the
+                // player unlocks that progression area.
                 this.currentLocation.setupArcadeTriggers((event, n) => {
                     const names = ['', 'Slot Machine', 'Hi-Lo', 'Plinko'];
                     if (event === 'enter') {
-                        this.showHint(`Press E to play ${names[n]}!`, 4000);
                         this.nearArcade = n;
-                    } else {
+                        this.showHint(`Press E to play ${names[n]}`, 4000);
+                    } else if (this.nearArcade === n) {
                         this.nearArcade = 0;
+                    }
+                });
+
+                // Setup mysterious stranger trigger
+                this.currentLocation.setupStrangerTrigger((event) => {
+                    if (event === 'enter') {
+                        this.showHint('Right-click to approach the stranger...', 4000);
+                        this.nearStranger = true;
+                    } else {
+                        this.nearStranger = false;
+                        if (this.dialogueOpen) this.closeDialogue();
+                    }
+                });
+
+                this.currentLocation.setupEyeTrigger((event) => {
+                    if (event === 'enter') {
+                        this.showHint('Right-click to speak with The Iris...', 4000);
+                        this.nearEye = true;
+                    } else {
+                        this.nearEye = false;
+                        if (this.dialogueOpen) this.closeDialogue();
+                    }
+                });
+
+                // Setup back door trigger
+                this.currentLocation.setupBackDoorTrigger((event) => {
+                    if (event === 'enter') {
+                        const hasKey = this.inventory.some(i => i.name === 'OldKey');
+                        if (hasKey) {
+                            this.showHint('Back hall door unlocking...', 1500);
+                            this._queueLocation('backhall');
+                        } else {
+                            this.showHint('Locked. The man on the bench may know where the key went.', 3500);
+                        }
+                        this.nearBackDoor = true;
+                    } else {
+                        this.nearBackDoor = false;
                     }
                 });
 
@@ -894,13 +1678,15 @@ export class TheaterGame {
                 break;
 
             case 'lavacave':
+                this.activity.caveVisits++;
                 this.currentLocation = new LavaCaveScene(this.scene);
                 this.currentLocation.build();
                 this.currentLocation.setupMoneyPickups(this.collectedBills, (id) => this.collectBill(id));
                 this.currentLocation.setupExitTrigger((event) => {
                     if (event === 'enter') {
-                        this.showHint('Press SPACE to crawl back out...', 4000);
+                        this.showHint('Cave exit opening...', 1500);
                         this.nearCaveExit = true;
+                        this._queueLocation('exterior');
                     } else {
                         this.nearCaveExit = false;
                     }
@@ -916,10 +1702,82 @@ export class TheaterGame {
                 this.player.floorY = -Infinity; // Allow falling into the lava
                 const caveSpawn = this.currentLocation.getSpawnPoint();
                 this.player.setPosition(caveSpawn.x, caveSpawn.y, caveSpawn.z);
-                this.player.cameraYaw = 0;
+                // Spawn looking along the parkour route toward the portal.
+                this.player.cameraYaw = Math.PI;
                 this.cameraInitialized = false;
                 this.setLocationUI('Lava Cave');
                 this.showHint("Don't fall in the lava!", 4000);
+                break;
+
+            case 'backhall':
+                this.currentLocation = new BackHallScene(this.scene);
+                this.currentLocation.build();
+                this.currentLocation.setupExitTrigger(event => {
+                    this.nearHallExit = event === 'enter';
+                    if (this.nearHallExit) {
+                        this.showHint('Lobby doors opening...', 1500);
+                        this._queueLocation('lobby');
+                    }
+                });
+                this.currentLocation.setupTheaterTriggers((event, n, title) => {
+                    if (event === 'enter') {
+                        this.nearHallTheater = n;
+                        this.showHint(`Screen ${n}: ${title} — doors opening...`, 1500);
+                        this._queueTheaterEntry(n);
+                    } else if (this.nearHallTheater === n) {
+                        this.nearHallTheater = 0;
+                    }
+                });
+                this.currentLocation.setupPoliceTrigger(event => {
+                    this.nearPolice = event === 'enter';
+                    if (this.nearPolice) this.showHint('Right-click to speak with Cinema Security', 4000);
+                });
+                this.currentLocation.setupConcessionTrigger(event => {
+                    this.nearConcession = event === 'enter';
+                    if (this.nearConcession) {
+                        this.showHint('Right-click to order from Benny at the back-hall concession line', 4000);
+                    } else if (this.dialogueOpen) {
+                        this.closeDialogue();
+                    }
+                });
+                this.currentLocation.setupArcadeTriggers((event, n) => {
+                    const names = ['', 'Slot Machine', 'Hi-Lo', 'Plinko'];
+                    if (event === 'enter') {
+                        this.nearArcade = n;
+                        this.showHint(`Press E to play the built-in ${names[n]} cabinet`, 4000);
+                    } else if (this.nearArcade === n) {
+                        this.nearArcade = 0;
+                    }
+                });
+                {
+                    const hallSpawn = this.currentLocation.getSpawnPoint();
+                    this.player.setPosition(hallSpawn.x, hallSpawn.y, hallSpawn.z);
+                }
+                this.player.cameraYaw = Math.PI;
+                this.cameraInitialized = false;
+                this.setLocationUI('Back Hall • Screens 1–4');
+                this.showHint('Screens, concessions, bar and arcade are down this hall.', 5000);
+                break;
+
+            case 'jail':
+                this.currentLocation = new JailScene(this.scene);
+                this.currentLocation.build();
+                this.currentLocation.setupBailTrigger(event => {
+                    this.nearJailBail = event === 'enter';
+                    if (this.nearJailBail) this.showHint('Press U with 💵 selected to pay $10 bail', 5000);
+                });
+                this.currentLocation.setupEscapeTrigger(event => {
+                    this.nearJailEscape = event === 'enter';
+                    if (this.nearJailEscape) this.showHint('Press SPACE to crawl through the escape vent', 5000);
+                });
+                {
+                    const jailSpawn = this.currentLocation.getSpawnPoint();
+                    this.player.setPosition(jailSpawn.x, jailSpawn.y, jailSpawn.z);
+                }
+                this.player.cameraYaw = Math.PI;
+                this.cameraInitialized = false;
+                this.setLocationUI('Cinema Security Holding Cell');
+                this.showHint('Pay bail or double-jump to the raised escape vent.', 6000);
                 break;
 
             case 'theater4':
@@ -946,8 +1804,9 @@ export class TheaterGame {
 
                 this.currentLocation.setupExitTrigger((approaching) => {
                     if (approaching) {
-                        this.showHint('Press SPACE to return to lobby...', 3000);
+                        this.showHint('Exit doors opening...', 1500);
                         this.nearTheaterExit = true;
+                        this._queueLocation('backhall');
                     } else {
                         this.nearTheaterExit = false;
                     }
@@ -986,8 +1845,9 @@ export class TheaterGame {
 
                 this.currentLocation.setupExitTrigger((approaching) => {
                     if (approaching) {
-                        this.showHint('Press SPACE to return to lobby...', 3000);
+                        this.showHint('Exit doors opening...', 1500);
                         this.nearTheaterExit = true;
+                        this._queueLocation('backhall');
                     } else {
                         this.nearTheaterExit = false;
                     }
@@ -1026,8 +1886,9 @@ export class TheaterGame {
 
                 this.currentLocation.setupExitTrigger((approaching) => {
                     if (approaching) {
-                        this.showHint('Press SPACE to return to lobby...', 3000);
+                        this.showHint('Exit doors opening...', 1500);
                         this.nearTheaterExit = true;
+                        this._queueLocation('backhall');
                     } else {
                         this.nearTheaterExit = false;
                     }
@@ -1068,8 +1929,9 @@ export class TheaterGame {
                 // Setup exit trigger
                 this.currentLocation.setupExitTrigger((approaching) => {
                     if (approaching) {
-                        this.showHint('Press SPACE to return to lobby...', 3000);
+                        this.showHint('Exit doors opening...', 1500);
                         this.nearTheaterExit = true;
+                        this._queueLocation('backhall');
                     } else {
                         this.nearTheaterExit = false;
                     }
@@ -1096,11 +1958,6 @@ export class TheaterGame {
     updateCamera(dt) {
         const player = this.player;
 
-        // Scroll wheel zoom — clamp between 3 (close) and 22 (far)
-        if (Input.scroll.delta !== 0) {
-            this.cameraDistance = Math.max(3, Math.min(22, this.cameraDistance + Input.scroll.delta * 0.01));
-        }
-
         // Calculate ideal camera position based on player orientation
         const pitchInfluence = player.cameraPitch * 6;
         const idealDistance = this.cameraDistance;
@@ -1117,18 +1974,33 @@ export class TheaterGame {
         // Look-at target (slightly above player)
         const targetLookAt = player.mesh.position.clone().add(this.cameraTargetOffset);
 
+        // Doorways are intentional player routes, but the orbit camera should
+        // stay within the room. Physical colliders then pull it in front of
+        // walls, counters, and columns that lie between it and the player.
+        const roomBounds = this.currentLocation?.getCameraBounds?.();
+        const boundedTargetPos = Collision.clampCameraToBounds(targetPos, roomBounds);
+        const safeTargetPos = Collision.clipCamera(targetLookAt, boundedTargetPos);
+
         // Initialize camera position on first frame
         if (!this.cameraInitialized) {
-            this.cameraCurrentPos.copy(targetPos);
+            this.cameraCurrentPos.copy(safeTargetPos);
             this.cameraCurrentLookAt.copy(targetLookAt);
             this.cameraInitialized = true;
         }
 
         // Smooth interpolation (frame-rate independent)
-        const smoothFactor = 1 - Math.pow(this.cameraSmoothing, dt * 60);
+        // Exponential damping gives the same natural camera response at every
+        // frame rate.  The previous power curve snapped almost fully each
+        // frame and made small mouse motions feel twitchy.
+        const smoothFactor = 1 - Math.exp(-dt * (7 + this.cameraSmoothing * 20));
 
-        this.cameraCurrentPos.lerp(targetPos, smoothFactor);
+        this.cameraCurrentPos.lerp(safeTargetPos, smoothFactor);
         this.cameraCurrentLookAt.lerp(targetLookAt, smoothFactor);
+
+        // Smoothing must not let a formerly valid position slide through a
+        // wall immediately after the player changes direction.
+        const boundedCurrentPos = Collision.clampCameraToBounds(this.cameraCurrentPos, roomBounds);
+        this.cameraCurrentPos.copy(Collision.clipCamera(targetLookAt, boundedCurrentPos));
 
         // Apply to camera
         this.camera.position.copy(this.cameraCurrentPos);
@@ -1144,8 +2016,8 @@ export class TheaterGame {
             return;
         }
 
-        // Arcade overlay open — freeze player, keep scene animating
-        if (this.arcadeOpen) {
+        // Arcade or full game overlay open — freeze player, keep scene animating.
+        if (this.arcadeOpen || this.gameOpen) {
             if (this.currentLocation?.update) this.currentLocation.update(dt, this.player.getPosition());
             this.updateCamera(dt);
             return;
@@ -1153,6 +2025,15 @@ export class TheaterGame {
 
         // Update player
         this.player.update(dt);
+
+        // Collision triggers request transitions; applying them after the
+        // trigger scan avoids mutating collider lists mid-iteration.
+        if (this._pendingLocation) {
+            const nextLocation = this._pendingLocation;
+            this._pendingLocation = null;
+            this.loadLocation(nextLocation);
+            return;
+        }
 
         // Lock camera during dialogue
         if (this.dialogueOpen && this._dialogueLockYaw !== undefined) {
@@ -1162,14 +2043,17 @@ export class TheaterGame {
         // Sitting: lock player in place and handle stand-up
         if (this.isSitting) {
             const sp = this.currentSeatPos;
-            this.player.mesh.position.set(sp.x, sp.seatY ?? 1.4, sp.z);
+            this.player.mesh.position.set(sp.x, sp.seatY ?? 0, sp.z);
             this.player.velocity.set(0, 0, 0);
-            this.player.mesh.rotation.y = this.player.cameraYaw;
+            // Lock both camera yaw and mesh rotation — override whatever player.update() changed
+            this.player.cameraYaw = sp.camYaw ?? Math.PI;
+            this.player.mesh.rotation.y = sp.meshRot ?? Math.PI;
             this.updateCamera(dt);
             if (this.currentLocation && this.currentLocation.update) {
                 this.currentLocation.update(dt, this.player.getPosition());
             }
             if (Input.isKeyJustPressed('KeyE')) this.standUp();
+            if (Input.isKeyJustPressed('Space')) this.launchGame();
             return;
         }
 
@@ -1181,15 +2065,34 @@ export class TheaterGame {
         // Update camera
         this.updateCamera(dt);
 
+        // Scroll wheel — cycle selected inventory slot (cooldown prevents runaway scrolling)
+        if (this._scrollCooldown > 0) this._scrollCooldown -= dt;
+        if (Input.scroll.delta !== 0 && this._scrollCooldown <= 0) {
+            const dir = Input.scroll.delta > 0 ? 1 : -1;
+            this.selectedSlot = (this.selectedSlot + dir + 8) % 8;
+            this._onSlotSelected();
+            this._scrollCooldown = 0.4;
+        }
+
         // Dialogue takes priority — block all other interaction input
         if (this.dialogueOpen) {
             this.handleDialogueInput();
             return;
         }
 
+        // Pending purchase: press U to pay, Escape to cancel
+        if (this.pendingPurchase && Input.isKeyJustPressed('Escape')) {
+            this.pendingPurchase = null;
+            this.showHint("Purchase cancelled.", 1500);
+        }
+
         // Check for door entry (space near door)
         if (this.nearDoor && Input.isKeyJustPressed('Space')) {
             this.loadLocation('lobby');
+        }
+
+        if (this.nearPoster && Input.isKeyJustPressed('Space')) {
+            this.launchGame(this.nearPoster.url, this.nearPoster.title);
         }
 
         // Check for dumpster / lava cave entry
@@ -1207,19 +2110,77 @@ export class TheaterGame {
             this.launchGame();
         }
 
+        // NPC conversations use the secondary mouse button. E stays reserved
+        // for gameplay actions such as minigames, seating, and dialogue choices.
+        const npcTalkRequested = Input.isMouseButtonJustPressed('right');
+
         // Check for ticket seller interaction
-        if (this.nearTicket && Input.isKeyJustPressed('KeyE')) {
+        if (this.nearTicket && npcTalkRequested) {
             this._openTicketConversation();
         }
 
         // Check for check-in clerk interaction
-        if (this.nearCheckIn && Input.isKeyJustPressed('KeyE')) {
+        if (this.nearCheckIn && npcTalkRequested) {
             this._openCheckInConversation();
+        }
+
+        // Check for concession stand interaction
+        if (this.nearConcession && npcTalkRequested) {
+            this._openConcessionConversation();
         }
 
         // Arcade minigames
         if (this.nearArcade && Input.isKeyJustPressed('KeyE')) {
             this._openArcadeGame(this.nearArcade);
+        }
+
+        // Mysterious stranger
+        if (this.nearStranger && npcTalkRequested) {
+            this._openStrangerConversation();
+        }
+
+        if (this.nearEye && npcTalkRequested) {
+            this._openIrisConversation();
+        }
+
+        if (this.nearPolice && npcTalkRequested) {
+            this._openPoliceConversation();
+        }
+
+        // Back door
+        if (this.nearBackDoor && Input.isKeyJustPressed('KeyE')) {
+            this._useKeyOnBackDoor();
+        }
+
+        if (this.nearHallExit && Input.isKeyJustPressed('Space')) {
+            this.loadLocation('lobby');
+        }
+
+        // Guests may sneak into a screening without a ticket, but The Iris
+        // records it and Officer Vale enforces the consequence in the hall.
+        if (this.nearHallTheater && Input.isKeyJustPressed('KeyE') && this.tickets === 0) {
+            const theater = `theater${this.nearHallTheater}`;
+            this.activity.unpaidMovies.add(theater);
+            this.updateObjectiveUI();
+            this.loadLocation(theater);
+        }
+
+        if (this.nearJailEscape && Input.isKeyJustPressed('Space')) {
+            this.activity.unpaidMovies.clear();
+            this.loadLocation('exterior');
+            this.showHint('You escaped through the vent. The Iris saw that too.', 5000);
+        }
+
+        if (this.nearJailBail && Input.isKeyJustPressed('KeyU') && this.selectedSlot === 0) {
+            if (this.currency >= 10) {
+                this.currency -= 10;
+                this.activity.bailPaid += 10;
+                this.activity.unpaidMovies.clear();
+                this.updateWalletUI();
+                this.loadLocation('lobby');
+                return;
+            }
+            this.showHint('You need $10 for bail. Try the raised escape vent.', 4000);
         }
 
         // Death zones
@@ -1236,30 +2197,6 @@ export class TheaterGame {
             this.loadLocation('exterior');
         }
 
-        // Check for theater 1 entry — costs 1 ticket
-        if (this.nearTheater1 && Input.isKeyJustPressed('Space')) {
-            if (this.tickets > 0) { this.tickets--; this.updateWalletUI(); this.loadLocation('theater1'); }
-            else this.showHint('You need a ticket! Buy one from the booth outside.', 4000);
-        }
-
-        // Check for theater 2 entry — costs 1 ticket
-        if (this.nearTheater2 && Input.isKeyJustPressed('Space')) {
-            if (this.tickets > 0) { this.tickets--; this.updateWalletUI(); this.loadLocation('theater2'); }
-            else this.showHint('You need a ticket! Buy one from the booth outside.', 4000);
-        }
-
-        // Check for theater 3 entry — costs 1 ticket
-        if (this.nearTheater3 && Input.isKeyJustPressed('Space')) {
-            if (this.tickets > 0) { this.tickets--; this.updateWalletUI(); this.loadLocation('theater3'); }
-            else this.showHint('You need a ticket! Buy one from the booth outside.', 4000);
-        }
-
-        // Check for theater 4 entry — costs 1 ticket
-        if (this.nearTheater4 && Input.isKeyJustPressed('Space')) {
-            if (this.tickets > 0) { this.tickets--; this.updateWalletUI(); this.loadLocation('theater4'); }
-            else this.showHint('You need a ticket! Buy one from the booth outside.', 4000);
-        }
-
         // Seat interaction (priority over screen launch)
         if (this.nearSeat && Input.isKeyJustPressed('KeyE')) {
             this.sitDown();
@@ -1272,16 +2209,107 @@ export class TheaterGame {
 
         // Check for theater exit
         if (this.nearTheaterExit && Input.isKeyJustPressed('Space')) {
-            this.loadLocation('lobby');
+            this.loadLocation('backhall');
+        }
+
+        // U — use selected item (context-sensitive)
+        if (Input.isKeyJustPressed('KeyU')) {
+            if (this.pendingPurchase) {
+                // Pay with money slot
+                if (this.selectedSlot === 0) {
+                    if (this.currency >= this.pendingPurchase.cost) {
+                        this.currency -= this.pendingPurchase.cost;
+                        this.updateWalletUI();
+                        this.pendingPurchase.onConfirm();
+                    } else {
+                        this.showHint("Not enough money!", 2000);
+                    }
+                    this.pendingPurchase = null;
+                } else {
+                    this.showHint("Select 💵 and press U to pay!", 2500);
+                }
+            } else if (this.selectedSlot === 1) {
+                // Use ticket to enter a theater
+                if (this.tickets === 0) {
+                    this.showHint('You need a ticket! Buy one from the booth outside.', 4000);
+                } else if (this.nearTheater1) {
+                    this.tickets--; this.updateWalletUI(); this.loadLocation('theater1');
+                } else if (this.nearTheater2) {
+                    this.tickets--; this.updateWalletUI(); this.loadLocation('theater2');
+                } else if (this.nearTheater3) {
+                    this.tickets--; this.updateWalletUI(); this.loadLocation('theater3');
+                } else if (this.nearTheater4) {
+                    this.tickets--; this.updateWalletUI(); this.loadLocation('theater4');
+                } else if (this.nearHallTheater) {
+                    const theater = `theater${this.nearHallTheater}`;
+                    this.tickets--;
+                    this.activity.moviesAttended.add(theater);
+                    this.updateWalletUI();
+                    this.loadLocation(theater);
+                }
+            } else {
+                // Eat selected food item
+                const foodIdx = this.selectedSlot - 2;
+                if (foodIdx >= 0 && foodIdx < this.inventory.length) {
+                    this.useItem(this.inventory[foodIdx].name);
+                }
+            }
         }
     }
 
-    launchGame() {
-        if (this.currentLocation && this.currentLocation.getGameUrl) {
-            const url = this.currentLocation.getGameUrl();
-            // Open game in new tab
-            window.open(url, '_blank');
-            this.showHint('Game opened in new tab!', 2000);
+    launchGame(urlOverride = null, titleOverride = null) {
+        const url = urlOverride || this.currentLocation?.getGameUrl?.();
+        if (!url || this.gameOpen) return;
+
+        const title = titleOverride || this.currentLocation?.gameConfig?.title || 'Featured Game';
+        this._gameReturnSeat = this.isSitting && this.currentSeatPos
+            ? { ...this.currentSeatPos }
+            : null;
+        this.activity.gamesPlayed.add(title);
+        if (this.locationName.startsWith('theater')) {
+            this.activity.moviesAttended.add(this.locationName);
+        }
+        this._checkProgressRewards();
+
+        document.exitPointerLock();
+        this.gameOpen = true;
+        this.uiElements.clickPrompt.classList.add('hidden');
+        this.uiElements.gameTitle.textContent = `NOW PLAYING — ${title.toUpperCase()}`;
+        this.uiElements.gameFrame.src = url;
+        this.uiElements.gameOverlay.style.display = 'block';
+        this.uiElements.gameOverlay.setAttribute('aria-hidden', 'false');
+    }
+
+    closeGame() {
+        if (!this.gameOpen) return;
+        this.gameOpen = false;
+        this.uiElements.gameFrame.src = 'about:blank';
+        this.uiElements.gameOverlay.style.display = 'none';
+        this.uiElements.gameOverlay.setAttribute('aria-hidden', 'true');
+        if (this._gameReturnSeat) {
+            this.isSitting = true;
+            this.currentSeatPos = { ...this._gameReturnSeat };
+            this.player.setSitting(true);
+            this.showHint('Back in your seat • Space plays • E stands', 5000);
+        } else {
+            this.showHint('Welcome back to the cinema.', 2000);
+        }
+        this._gameReturnSeat = null;
+        this.renderer.domElement.requestPointerLock();
+    }
+
+    _checkProgressRewards() {
+        const played = this.activity.gamesPlayed.size;
+        if (played >= 1 && !this.unlockedRewards.has('First Screening')) {
+            this.unlockedRewards.add('First Screening');
+            this.currency += 5;
+            this.updateWalletUI();
+            this.showHint('Unlocked: First Screening badge + $5', 3500);
+        }
+        if (played >= 3 && !this.unlockedRewards.has('Critic Pass')) {
+            this.unlockedRewards.add('Critic Pass');
+            this.addToInventory('CriticPass');
+            this.showHint('Unlocked: Critic Pass — The Iris noticed.', 4000);
         }
     }
 

@@ -102,7 +102,7 @@ export class Collision {
     }
 
     // Check if player is standing on something (for ground detection)
-    static checkGround(center, radius, feetY) {
+    static checkGround(center, radius, feetY, previousFeetY = feetY) {
         for (const c of Collision.colliders) {
             // Check if player is above this collider and within its XZ bounds
             const expandedBox = c.box.clone();
@@ -114,13 +114,84 @@ export class Collision {
             if (center.x >= expandedBox.min.x && center.x <= expandedBox.max.x &&
                 center.z >= expandedBox.min.z && center.z <= expandedBox.max.z) {
 
-                // Check if feet are near the top of this collider
+                // Check if feet are near the top of this collider. Also catch a
+                // downward step that crossed the surface between frames; without
+                // this swept check, a slow frame can tunnel through thin floors.
                 const topY = c.box.max.y;
-                if (feetY <= topY + 0.1 && feetY >= topY - 0.5) {
+                const nearSurface = feetY <= topY + 0.1 && feetY >= topY - 0.5;
+                const crossedSurface = previousFeetY >= topY && feetY <= topY + 0.1;
+                if (nearSurface || crossedSurface) {
                     return topY;
                 }
             }
         }
         return null;
+    }
+
+    // Find the highest walkable surface directly beneath a spawn point. This
+    // lets respawns begin grounded instead of depending on the first few
+    // physics frames to fall onto a thin floor collider.
+    static findGroundBelow(center, radius, maxDrop = 4) {
+        let highestGround = null;
+
+        for (const c of Collision.colliders) {
+            const expandedBox = c.box.clone();
+            expandedBox.min.x -= radius;
+            expandedBox.max.x += radius;
+            expandedBox.min.z -= radius;
+            expandedBox.max.z += radius;
+
+            if (center.x < expandedBox.min.x || center.x > expandedBox.max.x ||
+                center.z < expandedBox.min.z || center.z > expandedBox.max.z) {
+                continue;
+            }
+
+            const topY = c.box.max.y;
+            const isBelowSpawn = topY <= center.y + 0.1;
+            const isWithinSnapRange = topY >= center.y - maxDrop;
+            if (isBelowSpawn && isWithinSnapRange &&
+                (highestGround === null || topY > highestGround)) {
+                highestGround = topY;
+            }
+        }
+
+        return highestGround;
+    }
+
+    // Keep a third-person camera on the player's side of nearby level geometry.
+    // The camera is treated as a point: padding stops it from resting on a wall.
+    static clipCamera(origin, desiredPosition, padding = 0.35) {
+        const direction = desiredPosition.clone().sub(origin);
+        const distance = direction.length();
+        if (distance === 0) return desiredPosition.clone();
+
+        direction.divideScalar(distance);
+        const ray = new THREE.Ray(origin.clone(), direction);
+        let closestDistance = distance;
+        let hitFound = false;
+
+        for (const { box } of Collision.colliders) {
+            const hit = ray.intersectBox(box, new THREE.Vector3());
+            if (!hit) continue;
+
+            const hitDistance = hit.distanceTo(origin);
+            if (hitDistance >= 0 && hitDistance < closestDistance) {
+                closestDistance = hitDistance;
+                hitFound = true;
+            }
+        }
+
+        if (!hitFound) return desiredPosition.clone();
+        return origin.clone().addScaledVector(direction, Math.max(0.15, closestDistance - padding));
+    }
+
+    static clampCameraToBounds(position, bounds) {
+        if (!bounds) return position.clone();
+
+        return new THREE.Vector3(
+            THREE.MathUtils.clamp(position.x, bounds.minX, bounds.maxX),
+            THREE.MathUtils.clamp(position.y, bounds.minY, bounds.maxY),
+            THREE.MathUtils.clamp(position.z, bounds.minZ, bounds.maxZ),
+        );
     }
 }

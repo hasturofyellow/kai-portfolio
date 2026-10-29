@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { Collision } from '../collision.js';
+import { mountSecondFeatureProp } from '../objects/secondFeatureProps.js';
 
 // Refined color palette - Deep blue as PRIMARY grounding color
 const COLORS = {
@@ -28,6 +29,7 @@ export class ExteriorScene {
         this.time = 0;
         this.npcMixer = null;
         this.ticketTrigger = null;
+        this.posterTriggers = [];
     }
 
     build() {
@@ -40,6 +42,7 @@ export class ExteriorScene {
         this.createStreetLamps();
         this.createEntranceDoors();
         this.createNeonDecorations();
+        this.createPreviewPosters();
         this.createDumpster();
         // Bill #1: tucked between dumpster and building wall
         this.createMoneyStack('ext-dumpster', -14, -7);
@@ -52,17 +55,35 @@ export class ExteriorScene {
     buildTicketNPC() {
         const loader = new FBXLoader();
         loader.load('../Animated Men Characters - Feb 2019/FBX/Male_Suit.fbx', (fbx) => {
-            fbx.scale.setScalar(0.0125);
+            fbx.scale.setScalar(0.008333);
             fbx.position.set(12, 0, -2.2); // inside booth, behind window
-            fbx.rotation.y = Math.PI; // face toward player (+Z)
+            // Staff look out through the booth window toward the sidewalk.
+            fbx.lookAt(12, 0, 1);
             fbx.traverse(child => {
-                if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    if (child.material) {
+                        const mats = Array.isArray(child.material) ? child.material : [child.material];
+                        child.material = mats.map(m => new THREE.MeshLambertMaterial({
+                            color: m.color ?? 0xffffff,
+                            map: m.map ?? null,
+                        }));
+                    }
+                }
             });
             this.scene.add(fbx);
             this.objects.push(fbx);
             if (fbx.animations?.length > 0) {
                 this.npcMixer = new THREE.AnimationMixer(fbx);
-                this.npcMixer.clipAction(fbx.animations[0]).play();
+                const clip = fbx.animations.find(a =>
+                    a.name === 'HumanArmature|Man_Idle' || a.name === 'HumanArmature|Man_Standing'
+                );
+                if (clip) {
+                    this.npcMixer.clipAction(clip).play();
+                } else {
+                    console.warn('Ticket seller has no idle animation; keeping a still pose instead of playing a locomotion clip.');
+                }
             }
         }, undefined, (err) => console.warn('Male_Suit.fbx (exterior NPC) failed to load:', err));
 
@@ -227,14 +248,14 @@ export class ExteriorScene {
 
     createTheaterBuilding() {
         // Main facade - DEEP BLUE (primary - architecture)
-        const facadeGeo = new THREE.BoxGeometry(40, 22, 2);
+        const facadeGeo = new THREE.BoxGeometry(64, 24, 2);
         const facadeMat = new THREE.MeshStandardMaterial({
             color: COLORS.primary,
             roughness: 0.5,
             metalness: 0.25
         });
         const facade = new THREE.Mesh(facadeGeo, facadeMat);
-        facade.position.set(0, 11, -10);
+        facade.position.set(0, 12, -10);
         facade.castShadow = true;
         facade.receiveShadow = true;
         this.scene.add(facade);
@@ -400,21 +421,27 @@ export class ExteriorScene {
             { geo: [3.6,  0.2, 2.8], pos: [12,      4.9,  -1.9] },  // ceiling
             { geo: [0.75, 5,   0.2], pos: [10.375,  2.5,  -0.5] },  // front left pillar
             { geo: [0.75, 5,   0.2], pos: [13.625,  2.5,  -0.5] },  // front right pillar
-            { geo: [2.5,  1.0, 0.2], pos: [12,      0.5,  -0.5] },  // front bottom sill
+            { geo: [2.5,  1.8, 0.2], pos: [12,      0.9,  -0.5] },  // front bottom sill
             { geo: [2.5,  1.2, 0.2], pos: [12,      4.4,  -0.5] },  // front top header
         ];
         panels.forEach(({ geo, pos }) => {
             const mesh = new THREE.Mesh(new THREE.BoxGeometry(...geo), boothMat);
             mesh.position.set(...pos);
+            mesh.visible = false;
             mesh.castShadow = true;
             this.scene.add(mesh);
             this.objects.push(mesh);
             Collision.addCollider(mesh);
         });
 
+        mountSecondFeatureProp(this.scene, this.objects, 'ticket_booth', {
+            position: [12, 0, -2], scale: [3.1, 2.1, 2.3]
+        });
+
         // Counter shelf at the base of the opening
         const counter = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.15, 0.6), boothMat);
-        counter.position.set(12, 1.0, -0.2);
+        counter.position.set(12, 1.8, -0.2);
+        counter.visible = false;
         this.scene.add(counter);
         this.objects.push(counter);
 
@@ -445,7 +472,7 @@ export class ExteriorScene {
         this.objects.push(sign);
 
         // Booth interior light — warm white so NPC is clearly visible
-        const boothLight = new THREE.PointLight(0xfff5e0, 6, 8);
+        const boothLight = new THREE.PointLight(0xfff5e0, 2, 8);
         boothLight.position.set(12, 3.5, -1.5);
         this.scene.add(boothLight);
         this.lights.push(boothLight);
@@ -584,6 +611,34 @@ export class ExteriorScene {
         arrow.position.set(0, 0.3, -3);
         this.scene.add(arrow);
         this.objects.push(arrow);
+    }
+
+    createPreviewPosters() {
+        const previews = [
+            { title: 'AGE OF WAR', image: '../ageOfWar.png', url: '../ageOfWar.html', x: -26.4, color: 0xff6644 },
+            { title: 'BLAST BLOCK', image: '../blastblock.png', url: '../blastblock.html', x: -21.6, color: 0x44aaff },
+            { title: 'STICK SOCCER', image: '../stickgame.png', url: '../stick/index.html', x: 21.6, color: 0x44ff88 },
+            { title: 'SNAKE GAME', image: '../snakeGame.png', url: '../snakeGame.html', x: 26.4, color: 0x55fc77 },
+        ];
+        const loader = new THREE.TextureLoader();
+        [-24, 24].forEach(x => {
+            mountSecondFeatureProp(this.scene, this.objects, 'poster_lightboxes', {
+                position: [x, -4.75, -8.75], scale: 6.65
+            });
+        });
+        previews.forEach(preview => {
+            const poster = new THREE.Mesh(
+                new THREE.PlaneGeometry(4.05, 6.05),
+                new THREE.MeshBasicMaterial({ map: loader.load(preview.image), color: 0xffffff })
+            );
+            poster.position.set(preview.x, 5.2, -8.02);
+            this.scene.add(poster); this.objects.push(poster);
+
+            const trigger = new THREE.Mesh(new THREE.BoxGeometry(5.5, 7, 3));
+            trigger.visible = false; trigger.position.set(preview.x, 3.5, -6.4);
+            this.scene.add(trigger); this.objects.push(trigger);
+            this.posterTriggers.push({ trigger, ...preview });
+        });
     }
     createMoneyStack(id, x, z) {
         const group = new THREE.Group();
@@ -866,6 +921,12 @@ export class ExteriorScene {
         if (this.ticketTrigger) {
             Collision.addTrigger(this.ticketTrigger, callback, 'ticket-npc');
         }
+    }
+
+    setupPosterTriggers(callback) {
+        this.posterTriggers.forEach((poster, index) => {
+            Collision.addTrigger(poster.trigger, event => callback(event, poster), `exterior-poster-${index}`);
+        });
     }
 
     update(dt) {

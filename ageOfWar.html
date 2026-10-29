@@ -273,6 +273,9 @@
     // Audio references
     const homeAudio = document.getElementById("homeAudio");
     const gameAudio = document.getElementById("gameAudio");
+    // Keep the cabinet soundtrack under the cinema ambience and dialogue.
+    homeAudio.volume = 0.18;
+    gameAudio.volume = 0.20;
 
     let enemySpawnInterval = 5000; // default: medium
     let gameOver = false;

@@ -126,27 +126,57 @@ export class LavaCaveScene {
     }
 
     buildPortal() {
-        const portalMat = new THREE.MeshStandardMaterial({
-            color: 0x220044,
-            emissive: 0x8800ff,
-            emissiveIntensity: 2.0
+        const stoneMat = new THREE.MeshStandardMaterial({
+            color: 0x241820, roughness: 0.62, metalness: 0.35,
+            emissive: 0x2a061d, emissiveIntensity: 0.55,
+        });
+        const brassMat = new THREE.MeshStandardMaterial({
+            color: 0xb98a3c, roughness: 0.25, metalness: 0.9,
+            emissive: 0x5a2500, emissiveIntensity: 0.35,
         });
 
-        // Frame: top bar + two side posts
-        const frameParts = [
-            { size: [3.4, 0.4, 0.4], pos: [0,    5,   -36] }, // top bar
-            { size: [0.4, 5,   0.4], pos: [-1.7, 2.5, -36] }, // left post
-            { size: [0.4, 5,   0.4], pos: [1.7,  2.5, -36] }, // right post
-        ];
-        frameParts.forEach(({ size, pos }) => {
-            const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), portalMat);
+        // A substantial, authored doorway: deep jambs, lintel, crest and a
+        // beveled inner trim replace the temporary glowing rectangle.
+        [
+            { size: [0.8, 5.8, 1.1], pos: [-2.05, 2.9, -36] },
+            { size: [0.8, 5.8, 1.1], pos: [ 2.05, 2.9, -36] },
+            { size: [4.9, 0.8, 1.1], pos: [0, 5.8, -36] },
+        ].forEach(({ size, pos }) => {
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), stoneMat);
             mesh.position.set(...pos);
+            mesh.castShadow = true;
             this.scene.add(mesh);
             this.objects.push(mesh);
         });
 
-        // Glowing inner fill plane
-        const fillGeo = new THREE.PlaneGeometry(3, 5);
+        const crest = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.14, 12, 40), brassMat);
+        crest.position.set(0, 6.28, -35.38);
+        this.scene.add(crest); this.objects.push(crest);
+        const crestEye = new THREE.Mesh(new THREE.SphereGeometry(0.25, 18, 12), new THREE.MeshBasicMaterial({ color: 0xbb22ff }));
+        crestEye.scale.y = 0.55;
+        crestEye.position.set(0, 6.28, -35.22);
+        this.scene.add(crestEye); this.objects.push(crestEye);
+
+        const innerTrim = [
+            { size: [0.13, 5.0, 0.15], pos: [-1.56, 2.55, -35.38] },
+            { size: [0.13, 5.0, 0.15], pos: [ 1.56, 2.55, -35.38] },
+            { size: [3.25, 0.13, 0.15], pos: [0, 5.02, -35.38] },
+        ];
+        innerTrim.forEach(({ size, pos }) => {
+            const trim = new THREE.Mesh(new THREE.BoxGeometry(...size), brassMat);
+            trim.position.set(...pos);
+            this.scene.add(trim); this.objects.push(trim);
+        });
+
+        const doorPanel = new THREE.Mesh(
+            new THREE.BoxGeometry(3.0, 4.75, 0.32),
+            new THREE.MeshStandardMaterial({ color: 0x110717, roughness: 0.4, metalness: 0.55 })
+        );
+        doorPanel.position.set(0, 2.5, -35.72);
+        this.scene.add(doorPanel); this.objects.push(doorPanel);
+
+        // Glowing animated surface sits just in front of the physical door.
+        const fillGeo = new THREE.PlaneGeometry(2.7, 4.4);
         const fillMat = new THREE.MeshStandardMaterial({
             color: 0x6600cc,
             emissive: 0x6600cc,
@@ -156,10 +186,29 @@ export class LavaCaveScene {
             side: THREE.DoubleSide
         });
         const fill = new THREE.Mesh(fillGeo, fillMat);
-        fill.position.set(0, 2.5, -35.9);
+        fill.position.set(0, 2.5, -35.54);
         this.scene.add(fill);
         this.objects.push(fill);
         this.portalMesh = fill; // tracked for pulsing
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 512; canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#160817'; ctx.fillRect(0, 0, 512, 128);
+        ctx.strokeStyle = '#b98a3c'; ctx.lineWidth = 10; ctx.strokeRect(6, 6, 500, 116);
+        ctx.fillStyle = '#f4d68c'; ctx.font = 'bold 42px serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('THE DESCENT • PLAY IF YOU DARE', 256, 64);
+        const sign = new THREE.Mesh(
+            new THREE.BoxGeometry(5.4, 1.05, 0.28),
+            new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas) })
+        );
+        sign.position.set(0, 7.3, -35.62);
+        this.scene.add(sign); this.objects.push(sign);
+
+        const handle = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), brassMat);
+        handle.position.set(1.05, 2.5, -35.28);
+        this.scene.add(handle); this.objects.push(handle);
 
         // Invisible trigger volume
         const triggerMesh = new THREE.Mesh(new THREE.BoxGeometry(4, 5, 2));

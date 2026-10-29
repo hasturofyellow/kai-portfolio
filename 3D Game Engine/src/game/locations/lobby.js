@@ -28,26 +28,34 @@ export class LobbyScene {
         this.npcMixer = null;
         this.ticketNpcMixer = null;
         this.checkInTrigger = null;
+        this.concessionTrigger = null;
+        this.strangerTrigger = null;
+        this.eyeTrigger = null;
+        this.backDoorTrigger = null;
     }
 
     build() {
         this.setupLighting();
         this.buildFloor();
         this.buildWalls();
+        this.buildEntranceDoors();
         this.buildWallSconces();
         this.buildCeiling();
         this.buildColumns();
         this.buildFountain();
         this.buildChandelier();
         this.buildTicketCounter();
-        this.buildConcessionStand();
         this.buildCheckInNPC();
+        // Keep the core food and arcade loop available in the Grand Lobby.
+        // The expanded back-hall versions remain as additional destinations.
+        this.buildConcessionStand();
         this.buildTicketCounterNPC();
         this.buildLoungeArea();
         this.buildArcadeCorner();
         this.buildHallways();
         this.buildMainTheaterDoors();
         this.buildFloorAccents();
+        this.buildBackDoorMarker();
     }
 
     setupLighting() {
@@ -227,6 +235,48 @@ export class LobbyScene {
 
         // Magenta neon frame around opening (secondary - LED edges)
         this.addNeonFrame(0, 4, z + 0.3, openingWidth, 8, COLORS.secondary);
+    }
+
+    buildEntranceDoors() {
+        const glass = new THREE.MeshStandardMaterial({
+            color: 0x07233d, transparent: true, opacity: 0.55,
+            metalness: 0.75, roughness: 0.15,
+        });
+        [-2.35, 2.35].forEach((x, i) => {
+            const door = new THREE.Mesh(new THREE.BoxGeometry(4.5, 8, 0.32), glass);
+            door.position.set(x, 4, 24.55);
+            this.scene.add(door); this.objects.push(door);
+            const handle = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.06, 0.06, 1.2, 10),
+                new THREE.MeshStandardMaterial({ color: 0xd7b767, metalness: 0.9 })
+            );
+            handle.position.set(x + (i ? -1.35 : 1.35), 3.6, 24.32);
+            this.scene.add(handle); this.objects.push(handle);
+        });
+        // The exit action transitions through these doors; the collider keeps
+        // players and the orbit camera from stepping into the exterior void.
+        const safety = new THREE.Mesh(new THREE.BoxGeometry(9.6, 8, 0.45));
+        safety.visible = false; safety.position.set(0, 4, 24.7);
+        this.scene.add(safety); this.objects.push(safety); Collision.addCollider(safety);
+        this._buildTextLightbox('STREET EXIT', 6.5, 1.0, [0, 9.3, 24.28], 0);
+    }
+
+    _buildTextLightbox(text, width, height, position, rotationY = 0, color = COLORS.tertiary) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512; canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#060416'; ctx.fillRect(0, 0, 512, 128);
+        ctx.strokeStyle = '#' + color.toString(16).padStart(6, '0');
+        ctx.lineWidth = 10; ctx.strokeRect(5, 5, 502, 118);
+        ctx.fillStyle = '#fff4cf'; ctx.font = 'bold 48px Arial';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 256, 64);
+        const materials = Array(6).fill(null).map(() => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.18 }));
+        materials[4] = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas) });
+        materials[5] = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas) });
+        const sign = new THREE.Mesh(new THREE.BoxGeometry(width, height, 0.3), materials);
+        sign.position.set(...position); sign.rotation.y = rotationY;
+        this.scene.add(sign); this.objects.push(sign);
+        return sign;
     }
 
     addNeonFrame(x, y, z, width, height, color) {
@@ -428,6 +478,13 @@ export class LobbyScene {
         this.objects.push(eyeGroup);
         this.eyeGroup = eyeGroup;
 
+        const eyeTrigger = new THREE.Mesh(new THREE.CylinderGeometry(6.8, 6.8, 5, 24));
+        eyeTrigger.visible = false;
+        eyeTrigger.position.set(0, 2.5, 0);
+        this.scene.add(eyeTrigger);
+        this.objects.push(eyeTrigger);
+        this.eyeTrigger = eyeTrigger;
+
         // Eye glow light
         const orbLight = new THREE.PointLight(COLORS.pop, 4, 12);
         orbLight.position.set(0, 4.5, 0);
@@ -546,14 +603,7 @@ export class LobbyScene {
         this.scene.add(ticketWindow);
         this.objects.push(ticketWindow);
 
-        // "TICKETS" sign - magenta (secondary - signage)
-        const sign = new THREE.Mesh(
-            new THREE.BoxGeometry(4.5, 0.8, 0.15),
-            new THREE.MeshBasicMaterial({ color: COLORS.secondary })
-        );
-        sign.position.set(-20, 8, 13.5);
-        this.scene.add(sign);
-        this.objects.push(sign);
+        this._buildTextLightbox('TICKETS • CHECK-IN', 6.5, 1.0, [-20, 8, 13.5], 0, COLORS.secondary);
 
         const signLight = new THREE.PointLight(COLORS.secondary, 3, 10);
         signLight.position.set(-20, 8, 12);
@@ -602,27 +652,109 @@ export class LobbyScene {
         this.scene.add(display);
         this.objects.push(display);
 
-        // "SNACKS" sign - mint (pop - concessions highlight)
-        const sign = new THREE.Mesh(
-            new THREE.BoxGeometry(5, 0.8, 0.15),
-            new THREE.MeshBasicMaterial({ color: COLORS.pop })
-        );
-        sign.position.set(20, 8, 13.5);
-        this.scene.add(sign);
-        this.objects.push(sign);
+        this._buildTextLightbox('SNACKS • POPCORN', 6.5, 1.0, [20, 8, 13.5], 0, COLORS.pop);
 
         const signLight = new THREE.PointLight(COLORS.pop, 3, 10);
         signLight.position.set(20, 8, 12);
         this.scene.add(signLight);
         this.lights.push(signLight);
+
+        this.buildConcessionFoodDisplay();
+    }
+
+    buildConcessionFoodDisplay() {
+        const FLOOR_Y = 2.5;  // bottom of display case (case center 3.5, half-height 1)
+        const Z = 11.5;       // front half of display case (front face at z=11)
+
+        // --- Pizza (x=16.5) ---
+        const dough = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.5, 0.5, 0.07, 8),
+            new THREE.MeshStandardMaterial({ color: 0xd4a55a, roughness: 0.8 })
+        );
+        dough.position.set(16.5, FLOOR_Y + 0.035, Z);
+        this.scene.add(dough); this.objects.push(dough);
+
+        const sauce = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.44, 0.44, 0.02, 8),
+            new THREE.MeshStandardMaterial({ color: 0xcc3300, roughness: 0.7 })
+        );
+        sauce.position.set(16.5, FLOOR_Y + 0.08, Z);
+        this.scene.add(sauce); this.objects.push(sauce);
+
+        const cheese = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.38, 0.38, 0.02, 8),
+            new THREE.MeshStandardMaterial({ color: 0xffcc44, roughness: 0.7 })
+        );
+        cheese.position.set(16.5, FLOOR_Y + 0.11, Z);
+        this.scene.add(cheese); this.objects.push(cheese);
+
+        // --- Soda cup (x=19) ---
+        const cup = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.22, 0.17, 0.65, 8),
+            new THREE.MeshStandardMaterial({ color: 0xdd2222, roughness: 0.5 })
+        );
+        cup.position.set(19, FLOOR_Y + 0.325, Z);
+        this.scene.add(cup); this.objects.push(cup);
+
+        const lid = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.24, 0.24, 0.04, 8),
+            new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.4 })
+        );
+        lid.position.set(19, FLOOR_Y + 0.67, Z);
+        this.scene.add(lid); this.objects.push(lid);
+
+        const straw = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.025, 0.025, 0.45, 6),
+            new THREE.MeshStandardMaterial({ color: 0xff6688, roughness: 0.5 })
+        );
+        straw.position.set(19.1, FLOOR_Y + 0.67 + 0.225, Z);
+        this.scene.add(straw); this.objects.push(straw);
+
+        // --- Fries (x=21.5) ---
+        const friesBox = new THREE.Mesh(
+            new THREE.BoxGeometry(0.42, 0.35, 0.3),
+            new THREE.MeshStandardMaterial({ color: 0xdd2222, roughness: 0.7 })
+        );
+        friesBox.position.set(21.5, FLOOR_Y + 0.175, Z);
+        this.scene.add(friesBox); this.objects.push(friesBox);
+
+        const fryMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.8 });
+        [{ dx: -0.1, h: 0.32, rz: 0.12 }, { dx: 0, h: 0.28, rz: -0.08 }, { dx: 0.1, h: 0.30, rz: 0.15 }]
+            .forEach(f => {
+                const fry = new THREE.Mesh(new THREE.BoxGeometry(0.07, f.h, 0.07), fryMat);
+                fry.rotation.z = f.rz;
+                fry.position.set(21.5 + f.dx, FLOOR_Y + 0.35 + f.h / 2, Z);
+                this.scene.add(fry); this.objects.push(fry);
+            });
+
+        // --- Hamburger (x=24) ---
+        const bunMat  = new THREE.MeshStandardMaterial({ color: 0xc68642, roughness: 0.8 });
+        const pattyMat = new THREE.MeshStandardMaterial({ color: 0x4a2e0a, roughness: 0.9 });
+
+        const bottomBun = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.1, 8), bunMat);
+        bottomBun.position.set(24, FLOOR_Y + 0.05, Z);
+        this.scene.add(bottomBun); this.objects.push(bottomBun);
+
+        const patty = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.1, 8), pattyMat);
+        patty.position.set(24, FLOOR_Y + 0.15, Z);
+        this.scene.add(patty); this.objects.push(patty);
+
+        // Dome top bun: upper hemisphere
+        const topBun = new THREE.Mesh(
+            new THREE.SphereGeometry(0.38, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+            bunMat
+        );
+        topBun.position.set(24, FLOOR_Y + 0.2, Z);
+        this.scene.add(topBun); this.objects.push(topBun);
     }
 
     buildCheckInNPC() {
         const loader = new FBXLoader();
-        loader.load('../Animated Men Characters - Feb 2019/FBX/Smooth_Male_Casual.fbx', (fbx) => {
-            fbx.scale.setScalar(0.0125);
-            fbx.position.set(-20, 0, -2); // left side of lobby, near the arcade corner
-            fbx.rotation.y = -Math.PI / 2; // face +X toward lobby center
+        loader.load('../Animated Men Characters - Feb 2019/FBX/Male_LongSleeve.fbx', (fbx) => {
+            fbx.scale.setScalar(0.008333);
+            fbx.position.set(-20, 0, 14.5); // behind ticket counter, facing player
+            // Face the public side of the counter, rather than the back wall.
+            fbx.lookAt(-20, 0, 9);
             fbx.traverse(child => {
                 if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
             });
@@ -630,14 +762,21 @@ export class LobbyScene {
             this.objects.push(fbx);
             if (fbx.animations?.length > 0) {
                 this.npcMixer = new THREE.AnimationMixer(fbx);
-                this.npcMixer.clipAction(fbx.animations[0]).play();
+                const clip = fbx.animations.find(a =>
+                    a.name === 'HumanArmature|Man_Idle' || a.name === 'HumanArmature|Man_Standing'
+                );
+                if (clip) {
+                    this.npcMixer.clipAction(clip).play();
+                } else {
+                    console.warn('Check-in clerk has no idle animation; keeping a still pose instead of playing a locomotion clip.');
+                }
             }
         }, undefined, (err) => console.warn('Smooth_Male_Casual.fbx failed to load:', err));
 
         // Interaction trigger zone around the clerk near the arcade
-        const trigger = new THREE.Mesh(new THREE.BoxGeometry(8, 6, 6));
+        const trigger = new THREE.Mesh(new THREE.BoxGeometry(10, 6, 8));
         trigger.visible = false;
-        trigger.position.set(-20, 3, -2);
+        trigger.position.set(-20, 3, 9); // in front of ticket counter
         this.scene.add(trigger);
         this.objects.push(trigger);
         this.checkInTrigger = trigger;
@@ -647,9 +786,10 @@ export class LobbyScene {
         // NPC behind the real ticket counter (the one at x=-20)
         const loader = new FBXLoader();
         loader.load('../Animated Men Characters - Feb 2019/FBX/Male_Suit.fbx', (fbx) => {
-            fbx.scale.setScalar(0.0125);
-            fbx.position.set(-20, 0, 14.5); // standing on floor, behind counter (back face z=13.5)
-            fbx.rotation.y = 0; // face -Z toward approaching player
+            fbx.scale.setScalar(0.008333);
+            fbx.position.set(20, 0, 14.5); // behind concession stand
+            // Face the public side of the concession stand.
+            fbx.lookAt(20, 0, 9);
             fbx.traverse(child => {
                 if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
             });
@@ -657,9 +797,24 @@ export class LobbyScene {
             this.objects.push(fbx);
             if (fbx.animations?.length > 0) {
                 this.ticketNpcMixer = new THREE.AnimationMixer(fbx);
-                this.ticketNpcMixer.clipAction(fbx.animations[0]).play();
+                const clip = fbx.animations.find(a =>
+                    a.name === 'HumanArmature|Man_Idle' || a.name === 'HumanArmature|Man_Standing'
+                );
+                if (clip) {
+                    this.ticketNpcMixer.clipAction(clip).play();
+                } else {
+                    console.warn('Concession clerk has no idle animation; keeping a still pose instead of playing a locomotion clip.');
+                }
             }
         }, undefined, (err) => console.warn('Male_Suit.fbx (ticket NPC) failed to load:', err));
+
+        // Interaction trigger zone in front of the concession counter
+        const trigger = new THREE.Mesh(new THREE.BoxGeometry(10, 6, 8));
+        trigger.visible = false;
+        trigger.position.set(20, 3, 9);
+        this.scene.add(trigger);
+        this.objects.push(trigger);
+        this.concessionTrigger = trigger;
     }
 
     buildLoungeArea() {
@@ -692,9 +847,13 @@ export class LobbyScene {
     buildSofaNPC() {
         const loader = new FBXLoader();
         loader.load('Sitting Laughing.fbx', (fbx) => {
-            fbx.scale.setScalar(0.0125); // Match world scale (proportional to player/counter)
-            fbx.position.set(13, 1.1, -5); // butt on seat top (seat top at y=1.1)
-            fbx.rotation.y = Math.PI / 2; // face away from sofa back (+X direction)
+            const rawBox = new THREE.Box3().setFromObject(fbx);
+            const rawSize = rawBox.getSize(new THREE.Vector3());
+            console.log('[SofaNPC] raw min:', rawBox.min, 'max:', rawBox.max, 'size:', rawSize);
+            fbx.scale.setScalar(0.02);
+            fbx.position.set(13, -0.1, -5);
+            // The seated stranger faces into the lounge, toward the player sofa.
+            fbx.lookAt(18, -0.1, -5);
             fbx.traverse(child => {
                 if (child.isMesh) {
                     child.castShadow = true;
@@ -708,6 +867,64 @@ export class LobbyScene {
                 this.sofaMixer.clipAction(fbx.animations[0]).play();
             }
         });
+
+        // Interaction trigger zone around the stranger on the bench
+        const trigger = new THREE.Mesh(new THREE.BoxGeometry(8, 6, 7));
+        trigger.visible = false;
+        trigger.position.set(13, 3, -5);
+        this.scene.add(trigger);
+        this.objects.push(trigger);
+        this.strangerTrigger = trigger;
+    }
+
+    buildBackDoorMarker() {
+        const door = new THREE.Mesh(
+            new THREE.BoxGeometry(5, 7, 0.45),
+            new THREE.MeshStandardMaterial({ color: 0x110b1f, metalness: 0.6, roughness: 0.32 })
+        );
+        door.position.set(18, 3.5, -24.1);
+        this.scene.add(door);
+        this.objects.push(door);
+
+        const signCanvas = document.createElement('canvas');
+        signCanvas.width = 512; signCanvas.height = 128;
+        const ctx = signCanvas.getContext('2d');
+        ctx.fillStyle = '#16051d'; ctx.fillRect(0, 0, 512, 128);
+        ctx.strokeStyle = '#df3f8b'; ctx.lineWidth = 10; ctx.strokeRect(5, 5, 502, 118);
+        ctx.fillStyle = '#fff2c7'; ctx.font = 'bold 46px Arial';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('BACK HALL • SCREENS 1–4', 256, 64);
+        const sign = new THREE.Mesh(
+            new THREE.BoxGeometry(7.5, 1.35, 0.28),
+            [
+                new THREE.MeshStandardMaterial({ color: COLORS.secondary }),
+                new THREE.MeshStandardMaterial({ color: COLORS.secondary }),
+                new THREE.MeshStandardMaterial({ color: COLORS.secondary }),
+                new THREE.MeshStandardMaterial({ color: COLORS.secondary }),
+                new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(signCanvas) }),
+                new THREE.MeshStandardMaterial({ color: COLORS.secondary }),
+            ]
+        );
+        sign.position.set(18, 8.4, -23.75);
+        this.scene.add(sign);
+        this.objects.push(sign);
+
+        const handle = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.08, 0.08, 1.1, 12),
+            new THREE.MeshStandardMaterial({ color: 0xf3cf72, metalness: 0.9, roughness: 0.2 })
+        );
+        handle.rotation.x = Math.PI / 2;
+        handle.position.set(19.6, 3.4, -23.78);
+        this.scene.add(handle);
+        this.objects.push(handle);
+
+        // Interaction zone near the labeled back-hall door.
+        const trigger = new THREE.Mesh(new THREE.BoxGeometry(6, 6, 4));
+        trigger.visible = false;
+        trigger.position.set(18, 3, -22);
+        this.scene.add(trigger);
+        this.objects.push(trigger);
+        this.backDoorTrigger = trigger;
     }
 
     buildSofa(x, z, rotation) {
@@ -895,6 +1112,14 @@ export class LobbyScene {
         this.scene.add(placardPlane);
         this.objects.push(placardPlane);
 
+        // Matching face on the hallway side: the thick lightbox reads from
+        // either direction instead of behaving like one-sided wall text.
+        const reversePlacard = placardPlane.clone();
+        reversePlacard.rotation.y += Math.PI;
+        reversePlacard.position.x = x < 0 ? wallFace - 0.1 : wallFace + 0.1;
+        this.scene.add(reversePlacard);
+        this.objects.push(reversePlacard);
+
         // Hallway light - positioned inside lobby, away from wall
         const lightX = x < 0 ? x + 4 : x - 4;
         const light = new THREE.PointLight(color, 3, 10);
@@ -971,6 +1196,12 @@ export class LobbyScene {
         mainPlacard.position.set(0, 12, -23.93);
         this.scene.add(mainPlacard);
         this.objects.push(mainPlacard);
+
+        const mainPlacardBack = mainPlacard.clone();
+        mainPlacardBack.rotation.y = Math.PI;
+        mainPlacardBack.position.z = -24.07;
+        this.scene.add(mainPlacardBack);
+        this.objects.push(mainPlacardBack);
 
         const signLight = new THREE.PointLight(COLORS.secondary, 4, 12);
         signLight.position.set(0, 11, -22);
@@ -1115,22 +1346,40 @@ export class LobbyScene {
         }
     }
 
+    setupConcessionTrigger(callback) {
+        if (this.concessionTrigger) {
+            Collision.addTrigger(this.concessionTrigger, callback, 'concession-npc');
+        }
+    }
+
+    setupStrangerTrigger(callback) {
+        if (this.strangerTrigger) {
+            Collision.addTrigger(this.strangerTrigger, callback, 'stranger-npc');
+        }
+    }
+
+    setupEyeTrigger(callback) {
+        if (this.eyeTrigger) Collision.addTrigger(this.eyeTrigger, callback, 'iris-eye');
+    }
+
+    setupBackDoorTrigger(callback) {
+        if (this.backDoorTrigger) {
+            Collision.addTrigger(this.backDoorTrigger, callback, 'back-door');
+        }
+    }
+
     setupSeatTriggers(onEnterSeat, onExitSeat) {
-        const sofaPositions = [
-            { x: 13, z: -5 },
-            { x: 22, z: -5 }
-        ];
-        sofaPositions.forEach((seat, i) => {
-            const trigger = new THREE.Mesh(new THREE.BoxGeometry(4, 2.5, 2.4));
-            trigger.visible = false;
-            trigger.position.set(seat.x, 1.2, seat.z);
-            this.scene.add(trigger);
-            this.objects.push(trigger);
-            Collision.addTrigger(trigger, (event) => {
-                if (event === 'enter') onEnterSeat(seat);
-                else onExitSeat(seat);
-            }, `lobby-seat-${i}`);
-        });
+        // Only the player-facing sofa (x=22) is interactive; x=13 is occupied by the NPC
+        const seat = { x: 22, z: -5, seatY: 0.72, meshRot: -Math.PI / 2, camYaw: -Math.PI / 2 };
+        const trigger = new THREE.Mesh(new THREE.BoxGeometry(4, 2.5, 2.4));
+        trigger.visible = false;
+        trigger.position.set(seat.x, 1.2, seat.z);
+        this.scene.add(trigger);
+        this.objects.push(trigger);
+        Collision.addTrigger(trigger, (event) => {
+            if (event === 'enter') onEnterSeat(seat);
+            else onExitSeat(seat);
+        }, 'lobby-seat-0');
     }
 
     setupArcadeTriggers(callback) {
@@ -1155,6 +1404,15 @@ export class LobbyScene {
 
     getSpawnPoint() {
         return { x: 0, y: 1, z: 20 };
+    }
+
+    getCameraBounds() {
+        // Keep the third-person camera inside the lobby at doorway openings.
+        return {
+            minX: -29.15, maxX: 29.15,
+            minY: 1.2,    maxY: 14.2,
+            minZ: -24.15, maxZ: 24.15,
+        };
     }
 
     update(dt, playerPos) {

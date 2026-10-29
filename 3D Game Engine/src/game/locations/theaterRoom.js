@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Collision } from '../collision.js';
+import { mountSecondFeatureProp } from '../objects/secondFeatureProps.js';
 
 // Neon color palette
 const COLORS = {
@@ -440,12 +441,6 @@ export class TheaterRoomScene {
     buildSeats() {
         this.seats = [];
 
-        const seatMat = new THREE.MeshStandardMaterial({
-            color: 0x18163a,
-            roughness: 0.6,
-            metalness: 0.2
-        });
-
         // Rows of seats
         const rows = [
             { z: 5, seats: 8, spacing: 3 },
@@ -462,62 +457,28 @@ export class TheaterRoomScene {
                 const x = startX + i * row.spacing;
                 if (Math.abs(x) < 2.5) continue; // Skip aisle
 
-                this.buildNeonSeat(x, row.z, seatMat, rowIndex);
+                this.buildNeonSeat(x, row.z, rowIndex);
             }
         });
     }
 
-    buildNeonSeat(x, z, seatMat, rowIndex) {
-        const group = new THREE.Group();
+    buildNeonSeat(x, z, rowIndex) {
+        mountSecondFeatureProp(this.scene, this.objects, 'single_seat', {
+            position: [x, 0, z], rotationY: Math.PI, scale: 2.5
+        });
 
-        // Seat
-        const seat = new THREE.Mesh(
-            new THREE.BoxGeometry(2, 0.4, 1.8),
-            seatMat
-        );
-        seat.position.y = 1.2;
-        group.add(seat);
-
-        // Back
-        const back = new THREE.Mesh(
-            new THREE.BoxGeometry(2, 2.5, 0.4),
-            seatMat
-        );
-        back.position.set(0, 2.2, -0.7);
-        group.add(back);
-
-        // Neon edge on seat - alternating colors per row
+        // Keep a subtle per-theater glow beneath the imported velvet seat.
         const edgeColor = rowIndex % 2 === 0 ? COLORS.primary : COLORS.secondary;
-        const edge = new THREE.Mesh(
-            new THREE.BoxGeometry(2.1, 0.08, 0.08),
-            new THREE.MeshBasicMaterial({ color: edgeColor })
-        );
-        edge.position.set(0, 1.45, 0.9);
-        group.add(edge);
-
-        // Under-seat glow strip - emissive bar on front-bottom of seat
-        const underStrip = new THREE.Mesh(
-            new THREE.BoxGeometry(1.8, 0.04, 0.06),
-            new THREE.MeshBasicMaterial({ color: edgeColor, transparent: true, opacity: 0.85 })
-        );
-        underStrip.position.set(0, 0.9, 0.95);
-        group.add(underStrip);
-
-        // Soft floor glow pool in front of seat
         const glowPool = new THREE.Mesh(
             new THREE.PlaneGeometry(1.8, 0.7),
             new THREE.MeshBasicMaterial({ color: edgeColor, transparent: true, opacity: 0.12 })
         );
         glowPool.rotation.x = -Math.PI / 2;
-        glowPool.position.set(0, 0.02, 1.5);
-        group.add(glowPool);
+        glowPool.position.set(x, 0.02, z - 1.5);
+        this.scene.add(glowPool);
+        this.objects.push(glowPool);
 
-        group.rotation.y = Math.PI;
-        group.position.set(x, 0, z);
-        this.scene.add(group);
-        this.objects.push(group);
-
-        this.seats.push({ x, z });
+        this.seats.push({ x, z: z - 0.12, seatY: 0.88, meshRot: Math.PI, camYaw: Math.PI });
     }
 
     buildExitDoor() {
@@ -550,14 +511,9 @@ export class TheaterRoomScene {
         this.scene.add(topBeam);
         this.objects.push(topBeam);
 
-        // EXIT sign
-        const sign = new THREE.Mesh(
-            new THREE.BoxGeometry(3, 0.8, 0.2),
-            new THREE.MeshBasicMaterial({ color: COLORS.secondary })
-        );
-        sign.position.set(0, 11.5, 25);
-        this.scene.add(sign);
-        this.objects.push(sign);
+        mountSecondFeatureProp(this.scene, this.objects, 'exit_sign', {
+            position: [0, 4.8, 24.8], rotationY: Math.PI, scale: 3
+        });
 
         // Exit trigger
         const triggerBox = new THREE.Mesh(
@@ -755,6 +711,14 @@ export class TheaterRoomScene {
 
     getSpawnPoint() {
         return { x: 0, y: 1, z: 22 };
+    }
+
+    getCameraBounds() {
+        return {
+            minX: -14.15, maxX: 14.15,
+            minY: 1.2,    maxY: 14.2,
+            minZ: -19.15, maxZ: 24.15,
+        };
     }
 
     getGameUrl() {

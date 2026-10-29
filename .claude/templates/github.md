@@ -1,25 +1,16 @@
 # GitHub / Git Template
 
-## Auto-save hook
+## Workflow
 
-A `Stop` hook runs after every Claude response. It:
-1. Stages all changes (`git add -A`, respects `.gitignore`)
-2. Commits only if something changed — message: `wip: auto-save HH:MM`
-3. Pushes to `origin main`
+All commits and pushes are handled manually via **GitHub Desktop**. Claude makes file changes only — never runs git commands or pushes to GitHub.
 
-Nothing to do manually during normal work. The push happens automatically.
+## How to push after a work session
 
-## Manual commits (milestones)
-
-When a feature is complete, make a real commit before Claude's next response:
-
-```bash
-git add -A
-git commit -m "Add lava cave parkour section"
-git push origin main
-```
-
-This replaces the next auto-save with a proper message in the log.
+1. Open GitHub Desktop
+2. Review the changed files in the left panel
+3. Write a commit message summarizing the work
+4. Click **Commit to main**
+5. Click **Push origin**
 
 ## Commit message style
 
@@ -28,24 +19,10 @@ Add X          — new feature or file
 Fix X          — bug fix
 Update X       — change to existing feature
 Remove X       — deletion
-wip: auto-save — auto-generated, don't write these manually
 ```
 
-One line, imperative, no period. If it needs more context, add a blank line then a short paragraph.
+One line, imperative, no period.
 
-## When NOT to rely on auto-save
+## When to commit
 
-- Large FBX/zip assets — check they're in `.gitignore` or explicitly excluded
-- Work-in-progress that intentionally breaks something — commit manually with a `wip:` prefix
-- Secrets or API keys — should never reach `git add` due to `.gitignore`, but double-check
-
-## Branch strategy
-
-This project commits directly to `main`. No feature branches unless a change is experimental and might be reverted. If you want a branch:
-
-```bash
-git checkout -b feature-name
-# work...
-git push origin feature-name
-# open a PR on GitHub to merge back
-```
+Push whenever a logical chunk of work is done — a feature complete, a bug fixed, a game added. No need to commit every small change; GitHub Desktop shows all pending changes so nothing gets lost.
