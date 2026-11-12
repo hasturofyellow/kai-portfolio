@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kai Cinema Hangout</title>
+<style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #0e2a47; font-family: "Trebuchet MS", "Arial Rounded MT Bold", Arial, sans-serif; color: #12324f; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+    #wrap { position: relative; width: 100%; max-width: 960px; margin-top: 12px; }
+    canvas { display: block; width: 100%; aspect-ratio: 960 / 600; border-radius: 18px 18px 0 0; border: 4px solid #0a1d33; border-bottom: none; background: #000; touch-action: manipulation; }
+    #bar { display: flex; gap: 8px; align-items: center; background: linear-gradient(#3a8fd6, #1f66a8); padding: 8px 10px; border: 4px solid #0a1d33; border-top: none; border-radius: 0 0 18px 18px; flex-wrap: wrap; }
+    .btn { background: linear-gradient(#ffffff, #d6e9fa); border: 3px solid #0a1d33; border-radius: 50%; width: 42px; height: 42px; font-size: 20px; cursor: pointer; display: grid; place-items: center; padding: 0; box-shadow: 0 3px 0 #0a1d33; }
+    .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #0a1d33; }
+    #chat { flex: 1; min-width: 140px; height: 38px; border-radius: 19px; border: 3px solid #0a1d33; padding: 0 14px; font-size: 15px; font-family: inherit; outline: none; }
+    .swatch { width: 24px; height: 24px; border-radius: 50%; border: 3px solid #0a1d33; cursor: pointer; }
+    .swatch.on { outline: 3px solid #fff; }
+    .overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(5, 20, 40, 0.55); border-radius: 18px; z-index: 5; }
+    .overlay.open { display: flex; }
+    .panel { background: #fff; border: 4px solid #0a1d33; border-radius: 22px; padding: 18px 22px; max-width: 460px; width: 90%; box-shadow: 0 8px 0 #0a1d33; }
+    .panel h2 { margin: 0 0 8px; font-size: 22px; color: #1f66a8; }
+    .panel p { margin: 0 0 14px; font-size: 16px; line-height: 1.4; }
+    .pbtns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pbtn { background: linear-gradient(#ffd84d, #f2a900); border: 3px solid #0a1d33; border-radius: 14px; padding: 7px 16px; font-family: inherit; font-size: 15px; font-weight: bold; cursor: pointer; color: #0a1d33; }
+    .pbtn.alt { background: linear-gradient(#ffffff, #d6e9fa); }
+    #mapGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    #mapGrid button { height: 70px; border-radius: 16px; border: 3px solid #0a1d33; font-family: inherit; font-size: 16px; font-weight: bold; cursor: pointer; color: #fff; text-shadow: 0 2px 0 #0a1d33; }
+    #gameBox { width: 94%; height: 90%; background: #000; border: 4px solid #0a1d33; border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; }
+    #gameHead { background: #1f66a8; color: #fff; display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; font-weight: bold; }
+    #gameFrame { flex: 1; border: 0; width: 100%; background: #fff; }
+    #hint { margin: 8px 0 16px; color: #9cc3e6; font-size: 13px; text-align: center; padding: 0 16px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+    <canvas id="c" width="960" height="600"></canvas>
+    <div id="bar">
+        <button class="btn" id="mapBtn" title="Map">🗺️</button>
+        <button class="btn emote" data-e="😀" title="Emote">😀</button>
+        <button class="btn emote" data-e="❤️" title="Emote">❤️</button>
+        <button class="btn emote" data-e="🍿" title="Emote">🍿</button>
+        <button class="btn emote" data-e="🎬" title="Emote">🎬</button>
+        <input id="chat" maxlength="60" placeholder="Click here to chat, Enter to say it">
+        <div id="swatches" style="display:flex;gap:5px"></div>
+    </div>
+
+    <div class="overlay" id="dialog"><div class="panel">
+        <h2 id="dlgName"></h2><p id="dlgText"></p><div class="pbtns" id="dlgBtns"></div>
+    </div></div>
+
+    <div class="overlay" id="map"><div class="panel">
+        <h2>Cinema Map</h2>
+        <div id="mapGrid"></div>
+        <div class="pbtns"><button class="pbtn alt" id="mapClose">Close</button></div>
+    </div></div>
+
+    <div class="overlay" id="gameModal"><div id="gameBox">
+        <div id="gameHead"><span id="gameTitle"></span><button class="pbtn alt" id="gameClose">✕ Leave screen</button></div>
+        <iframe id="gameFrame" title="Now playing"></iframe>
+    </div></div>
+</div>
+<div id="hint">Click the floor to walk · Click doors, people and objects to interact · Demo of the cinema as a 2D room-based hangout</div>
+
+<script>
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const W = 960, H = 600;
+
+// ---------- state ----------
+const state = {
+    coins: 15, ticket: false, popcorn: false,
+    strangerFed: false, bills: new Set(), fellInLava: false,
+    quest: 0, questActive: false,
+};
+
+const COLORS = ['#3a8fd6', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#ff7eb6', '#1abc9c', '#34495e'];
+
+function makeBuddy(name, color, x, y, opts = {}) {
+    return { name, color, x, y, tx: x, ty: y, dir: 1, phase: 0, moving: false,
+        hat: opts.hat || null, wander: !!opts.wander, lines: opts.lines || [],
+        sit: !!opts.sit, say: '', sayT: 0, nextWander: Math.random() * 3, nextLine: 4 + Math.random() * 6,
+        onClick: opts.onClick || null, sink: 0 };
+}
+
+const player = makeBuddy('You', '#3a8fd6', 480, 450, { hat: 'beanie' });
+let pendingAction = null;
+
+// ---------- helpers ----------
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function ell(x, y, rx, ry) { ctx.beginPath(); ctx.ellipse(x, y, Math.max(rx, 0.1), Math.max(ry, 0.1), 0, 0, Math.PI * 2); }
+function fillStroke(fill, stroke = '#0a1d33', lw = 3) { ctx.fillStyle = fill; ctx.fill(); ctx.lineWidth = lw; ctx.strokeStyle = stroke; ctx.stroke(); }
+function shade(hex, amt) {
+    const n = parseInt(hex.slice(1), 16);
+    const f = v => Math.max(0, Math.min(255, Math.round(v + amt)));
+    return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+function inPoly(px, py, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const [xi, yi] = poly[i], [xj, yj] = poly[j];
+        if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+}
+function text(str, x, y, size, color = '#fff', align = 'center', stroke = '#0a1d33') {
+    ctx.font = `bold ${size}px "Trebuchet MS", Arial, sans-serif`;
+    ctx.textAlign = align; ctx.textBaseline = 'middle';
+    if (stroke) { ctx.lineWidth = Math.max(3, size / 5); ctx.strokeStyle = stroke; ctx.lineJoin = 'round'; ctx.strokeText(str, x, y); }
+    ctx.fillStyle = color; ctx.fillText(str, x, y);
+}
+function scaleAt(room, y) { return 0.62 + 0.5 * (y - room.floorTop) / (H - room.floorTop); }
+function say(b, msg, secs = 4) { b.say = msg; b.sayT = secs; }
+
+let toastMsg = '', toastT = 0;
+function toast(msg) { toastMsg = msg; toastT = 3; }
+
+// ---------- buddy drawing (original round "puffball" avatars) ----------
+function drawBuddy(b, room) {
+    const s = scaleAt(room, b.y) * (b.sit ? 0.95 : 1);
+    const bob = b.moving ? Math.abs(Math.sin(b.phase)) * 5 * s : 0;
+    const x = b.x, y = b.y + b.sink * 60 * s;
+    ctx.save();
+    if (b.sink > 0) { ctx.beginPath(); ctx.rect(x - 60 * s, 0, 120 * s, b.y + 2); ctx.clip(); }
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ell(b.x, b.y, 28 * s, 8 * s); ctx.fill();
+    // feet
+    const step = b.moving ? Math.sin(b.phase) * 5 * s : 0;
+    ell(x - 11 * s, y - 3 * s - Math.max(0, step), 10 * s, 6 * s); fillStroke(shade(b.color, -50), '#0a1d33', 2.5);
+    ell(x + 11 * s, y - 3 * s - Math.max(0, -step), 10 * s, 6 * s); fillStroke(shade(b.color, -50), '#0a1d33', 2.5);
+    const cy = y - 36 * s - bob;
+    // ears
+    ell(x - 17 * s, cy - 30 * s, 9 * s, 9 * s); fillStroke(b.color);
+    ell(x + 17 * s, cy - 30 * s, 9 * s, 9 * s); fillStroke(b.color);
+    ell(x - 17 * s, cy - 30 * s, 4.5 * s, 4.5 * s); ctx.fillStyle = '#ffc7d9'; ctx.fill();
+    ell(x + 17 * s, cy - 30 * s, 4.5 * s, 4.5 * s); ctx.fill();
+    // arms
+    const wave = b.moving ? Math.sin(b.phase) * 0.4 : 0;
+    ctx.save(); ctx.translate(x - 26 * s, cy + 2 * s); ctx.rotate(0.5 + wave); ell(0, 6 * s, 7 * s, 12 * s); fillStroke(b.color); ctx.restore();
+    ctx.save(); ctx.translate(x + 26 * s, cy + 2 * s); ctx.rotate(-0.5 - wave); ell(0, 6 * s, 7 * s, 12 * s); fillStroke(b.color); ctx.restore();
+    // body
+    ell(x, cy, 29 * s, 34 * s); fillStroke(b.color);
+    ell(x + b.dir * 3 * s, cy + 9 * s, 17 * s, 18 * s); ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fill();
+    // face
+    const fx = x + b.dir * 5 * s, fy = cy - 12 * s;
+    ell(fx - 9 * s, fy, 6.5 * s, 7.5 * s); fillStroke('#fff', '#0a1d33', 2);
+    ell(fx + 9 * s, fy, 6.5 * s, 7.5 * s); fillStroke('#fff', '#0a1d33', 2);
+    ctx.fillStyle = '#0a1d33';
+    ell(fx - 8 * s + b.dir * 2 * s, fy + 1 * s, 3.2 * s, 3.8 * s); ctx.fill();
+    ell(fx + 10 * s + b.dir * 2 * s, fy + 1 * s, 3.2 * s, 3.8 * s); ctx.fill();
+    ctx.fillStyle = 'rgba(255,120,150,0.55)';
+    ell(fx - 16 * s, fy + 9 * s, 5 * s, 3 * s); ctx.fill(); ell(fx + 16 * s, fy + 9 * s, 5 * s, 3 * s); ctx.fill();
+    ctx.beginPath(); ctx.arc(fx, fy + 8 * s, 4 * s, 0.15 * Math.PI, 0.85 * Math.PI); ctx.lineWidth = 2; ctx.strokeStyle = '#0a1d33'; ctx.stroke();
+    drawHat(b.hat, x, cy - 30 * s, s);
+    ctx.restore();
+    if (b.sink === 0) text(b.name, x, b.y + 14 * s, 13 * s + 2, '#fff');
+}
+
+function drawHat(hat, x, y, s) {
+    if (hat === 'beanie') {
+        ctx.beginPath(); ctx.arc(x, y + 6 * s, 22 * s, Math.PI, 0); ctx.closePath(); fillStroke('#ffd84d');
+        rr(x - 24 * s, y + 2 * s, 48 * s, 9 * s, 4 * s); fillStroke('#f2a900');
+        ell(x, y - 17 * s, 6 * s, 6 * s); fillStroke('#fff');
+    } else if (hat === 'cap') {
+        rr(x - 20 * s, y - 12 * s, 40 * s, 18 * s, 6 * s); fillStroke('#1b2c6b');
+        rr(x - 24 * s, y + 3 * s, 48 * s, 6 * s, 3 * s); fillStroke('#0f1a40');
+        ell(x, y - 3 * s, 5 * s, 5 * s); fillStroke('#ffd84d', '#0a1d33', 1.5);
+    } else if (hat === 'veil') {
+        ctx.beginPath(); ctx.moveTo(x - 30 * s, y + 30 * s); ctx.quadraticCurveTo(x, y - 40 * s, x + 30 * s, y + 30 * s); ctx.closePath();
+        ctx.fillStyle = 'rgba(40,10,60,0.55)'; ctx.fill(); ctx.strokeStyle = '#0a1d33'; ctx.lineWidth = 2; ctx.stroke();
+    } else if (hat === 'tophat') {
+        rr(x - 24 * s, y + 2 * s, 48 * s, 7 * s, 3 * s); fillStroke('#222');
+        rr(x - 15 * s, y - 26 * s, 30 * s, 30 * s, 3 * s); fillStroke('#222');
+        ctx.fillStyle = '#c0392b'; ctx.fillRect(x - 15 * s, y - 4 * s, 30 * s, 5 * s);
+    }
+}
+
+function drawBubble(b, room) {
+    if (!b.say || b.sink > 0) return;
+    const s = scaleAt(room, b.y);
+    ctx.font = 'bold 15px "Trebuchet MS", Arial, sans-serif';
+    const words = b.say.split(' '); const lines = []; let cur = '';
+    for (const w of words) { const t = cur ? cur + ' ' + w : w; if (ctx.measureText(t).width > 200 && cur) { lines.push(cur); cur = w; } else cur = t; }
+    lines.push(cur);
+    const bw = Math.max(...lines.map(l => ctx.measureText(l).width)) + 24, bh = lines.length * 19 + 14;
+    const bx = Math.min(W - bw - 6, Math.max(6, b.x - bw / 2)), by = b.y - 110 * s - bh;
+    ctx.globalAlpha = Math.min(1, b.sayT * 2);
+    rr(bx, by, bw, bh, 12); fillStroke('#fff', '#0a1d33', 3);
+    ctx.beginPath(); ctx.moveTo(b.x - 8, by + bh - 1.5); ctx.lineTo(b.x, by + bh + 12); ctx.lineTo(b.x + 8, by + bh - 1.5);
+    ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#0a1d33'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillRect(b.x - 7, by + bh - 4, 14, 4);
+    lines.forEach((l, i) => text(l, bx + bw / 2, by + 16 + i * 19, 15, '#0a1d33', 'center', null));
+    ctx.globalAlpha = 1;
+}
+
+// ---------- shared props ----------
+function drawBill(x, y, t) {
+    const g = Math.sin(t * 4 + x) * 0.5 + 0.5;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(-0.25);
+    rr(-14, -7, 28, 14, 3); fillStroke('#5fbf5f', '#1e5e1e', 2);
+    text('$5', 0, 0, 10, '#1e5e1e', 'center', null);
+    ctx.restore();
+    ctx.fillStyle = `rgba(255,255,200,${0.25 * g})`; ell(x, y, 22, 14); ctx.fill();
+}
+
+// ---------- rooms ----------
+const rooms = {};
+
+rooms.street = {
+    title: 'Main Street', floorTop: 360, color: '#3a8fd6',
+    poly: [[20, 372], [940, 372], [940, 515], [20, 515]],
+    entries: { default: [480, 440], lobby: [480, 400], cave: [800, 430] },
+    drawBg(t) {
+        const g = ctx.createLinearGradient(0, 0, 0, 360); g.addColorStop(0, '#5cb6f0'); g.addColorStop(1, '#c9ecff');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, W, 360);
+        for (let i = 0; i < 4; i++) {
+            const cx = ((t * 12 + i * 280) % 1200) - 120, cy = 50 + (i % 2) * 40;
+            ctx.fillStyle = '#fff'; ell(cx, cy, 50, 18); ctx.fill(); ell(cx + 30, cy - 10, 30, 18); ctx.fill(); ell(cx - 28, cy - 4, 26, 14); ctx.fill();
+        }
+        rr(-10, 150, 170, 220, 0); fillStroke('#8fa7c4'); rr(800, 120, 180, 250, 0); fillStroke('#a4b6cc');
+        for (let r = 0; r < 4; r++) for (let k = 0; k < 3; k++) { rr(15 + k * 48, 170 + r * 46, 30, 28, 4); fillStroke(r % 2 ? '#ffe9a6' : '#d9eefc', '#0a1d33', 2); }
+        for (let r = 0; r < 5; r++) for (let k = 0; k < 3; k++) { rr(820 + k * 48, 140 + r * 44, 30, 28, 4); fillStroke((r + k) % 3 ? '#d9eefc' : '#ffe9a6', '#0a1d33', 2); }
+        // cinema facade
+        rr(160, 40, 640, 335, [26, 26, 0, 0]); fillStroke('#c0392b');
+        rr(185, 20, 590, 40, 18); fillStroke('#8e2a20');
+        rr(215, 92, 530, 82, 14); fillStroke('#1d1530');
+        for (let i = 0; i < 26; i++) {
+            const on = (Math.floor(t * 6) + i) % 3 !== 0;
+            ctx.fillStyle = on ? '#ffe066' : '#7a6420';
+            ell(228 + i * 20.2, 98, 4, 4); ctx.fill(); ell(228 + i * 20.2, 168, 4, 4); ctx.fill();
+        }
+        text('KAI CINEMA', 480, 134, 46, '#ffd84d');
+        text('NOW SHOWING: 4 GAMES', 480, 196, 16, '#fff');
+        // posters
+        [[195, 'SNAKE', '#2ecc71'], [655, 'SOCCER', '#3a8fd6']].forEach(([px, label, col]) => {
+            rr(px, 222, 110, 130, 8); fillStroke('#ffd84d');
+            rr(px + 8, 230, 94, 114, 6); fillStroke(col, '#0a1d33', 2);
+            text(label, px + 55, 330, 16, '#fff');
+            ell(px + 55, 280, 26, 26); fillStroke('#fff', '#0a1d33', 2);
+            text('▶', px + 57, 281, 22, col, 'center', null);
+        });
+        // doors
+        rr(410, 232, 140, 143, [12, 12, 0, 0]); fillStroke('#5a1a12');
+        rr(420, 242, 58, 133, 6); fillStroke('#bfe4ff'); rr(482, 242, 58, 133, 6); fillStroke('#bfe4ff');
+        ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(430, 252, 8, 90); ctx.fillRect(492, 252, 8, 90);
+        ctx.fillStyle = '#ffd84d'; ctx.fillRect(468, 300, 6, 22); ctx.fillRect(486, 300, 6, 22);
+        // sidewalk + road
+        ctx.fillStyle = '#e3d5bd'; ctx.fillRect(0, 360, W, 160);
+        ctx.strokeStyle = 'rgba(10,29,51,0.15)'; ctx.lineWidth = 2;
+        for (let x = 0; x < W; x += 80) { ctx.beginPath(); ctx.moveTo(x, 360); ctx.lineTo(x - 40, 520); ctx.stroke(); }
+        ctx.beginPath(); ctx.moveTo(0, 440); ctx.lineTo(W, 440); ctx.stroke();
+        rr(410, 372, 140, 34, 10); fillStroke('#b8323a', '#0a1d33', 2);
+        ctx.fillStyle = '#9aa3ad'; ctx.fillRect(0, 515, W, 12);
+        ctx.fillStyle = '#4b525a'; ctx.fillRect(0, 527, W, 73);
+        ctx.fillStyle = '#ffd84d'; for (let x = (-t * 40) % 90; x < W; x += 90) ctx.fillRect(x, 560, 50, 7);
+    },
+    props: [
+        { y: 425, draw() {
+            ctx.fillStyle = 'rgba(0,0,0,0.2)'; ell(120, 425, 26, 7); ctx.fill();
+            rr(114, 230, 12, 195, 4); fillStroke('#2c3e50');
+            ell(120, 222, 22, 18); fillStroke('#ffe066');
+        } },
+        { y: 405, draw() {
+            ctx.fillStyle = 'rgba(0,0,0,0.25)'; ell(870, 405, 80, 10); ctx.fill();
+            rr(800, 330, 140, 75, 8); fillStroke('#27ae60');
+            rr(792, 318, 156, 18, 6); fillStroke('#1e8449');
+            ctx.strokeStyle = 'rgba(10,29,51,0.35)'; ctx.lineWidth = 3;
+            for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.moveTo(820 + k * 32, 345); ctx.lineTo(820 + k * 32, 395); ctx.stroke(); }
+            text('NOT A DUMPSTER?', 870, 370, 11, '#fff');
+        } },
+    ],
+    hotspots: [
+        { x: 410, y: 232, w: 140, h: 143, label: 'Enter the cinema', walkTo: [480, 392], act: () => goRoom('lobby', 'street') },
+        { x: 792, y: 318, w: 156, h: 87, label: 'Climb into the dumpster', walkTo: [820, 420], act: () => goRoom('cave', 'street') },
+        { x: 905, y: 450, w: 30, h: 20, bill: 'street', label: 'Something green...', walkTo: [890, 470], act: () => grabBill('street') },
+    ],
+    npcs: [],
+};
+
+rooms.lobby = {
+    title: 'Lobby', floorTop: 335, color: '#9b59b6',
+    poly: [[312, 345], [940, 345], [940, 588], [20, 588], [20, 400], [312, 400]],
+    entries: { default: [480, 470], street: [480, 545], theater: [480, 370] },
+    drawBg(t) {
+        ctx.fillStyle = '#6b3fa0'; ctx.fillRect(0, 0, W, 340);
+        ctx.fillStyle = 'rgba(255,255,255,0.06)'; for (let x = 0; x < W; x += 60) ctx.fillRect(x, 0, 30, 340);
+        ctx.fillStyle = '#4a2a75'; ctx.fillRect(0, 320, W, 20);
+        // carpet
+        ctx.fillStyle = '#b8323a'; ctx.fillRect(0, 340, W, 260);
+        ctx.fillStyle = 'rgba(255,216,77,0.18)';
+        for (let r = 0; r < 6; r++) for (let k = -1; k < 13; k++) {
+            const cx = k * 80 + (r % 2) * 40, cy = 360 + r * 46;
+            ctx.beginPath(); ctx.moveTo(cx, cy - 10); ctx.lineTo(cx + 14, cy); ctx.lineTo(cx, cy + 10); ctx.lineTo(cx - 14, cy); ctx.fill();
+        }
+        // theater doors
+        rr(405, 175, 150, 160, [70, 70, 0, 0]); fillStroke('#2b1640');
+        rr(420, 190, 120, 145, [60, 60, 0, 0]); fillStroke('#1d1530');
+        const glow = 0.5 + 0.5 * Math.sin(t * 3);
+        rr(400, 120, 160, 40, 12); fillStroke('#1d1530');
+        text('SCREENS ▲', 480, 141, 20, `rgb(255,${200 + glow * 55},${80 + glow * 80})`);
+        // menu board
+        rr(40, 60, 250, 120, 10); fillStroke('#1d1530');
+        text('SNACKS', 165, 85, 20, '#ffd84d');
+        text('🍿 Popcorn ..... 3c', 165, 118, 15, '#fff', 'center', null);
+        text('🥤 Soda .......  soon', 165, 146, 15, '#999', 'center', null);
+        // ticket booth with Iris
+        rr(640, 140, 210, 200, [20, 20, 0, 0]); fillStroke('#c9a227');
+        rr(658, 180, 174, 110, 10); fillStroke('#20103a');
+        const iris = { name: '', color: '#d9c7ef', x: 745, y: 300, dir: -1, phase: 0, moving: false, hat: 'veil', sink: 0, sit: false };
+        ctx.save(); rr(658, 180, 174, 110, 10); ctx.clip(); drawBuddy(iris, { floorTop: 0 }); ctx.restore();
+        ctx.fillStyle = 'rgba(180,220,255,0.18)'; rr(658, 180, 174, 110, 10); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(670, 188, 10, 90);
+        rr(650, 150, 190, 26, 8); fillStroke('#1d1530');
+        text('TICKETS · IRIS', 745, 163, 14, '#ffd84d');
+        rr(640, 290, 210, 50, 0); fillStroke('#a8861c');
+        // exit mat
+        rr(400, 560, 160, 30, 10); fillStroke('#2c3e50', '#0a1d33', 2);
+        text('▼ EXIT', 480, 575, 14, '#fff', 'center', null);
+    },
+    props: [
+        { y: 400, draw(t) {
+            rr(20, 285, 290, 115, 10); fillStroke('#e6e6e6');
+            rr(20, 270, 290, 22, 8); fillStroke('#c0392b');
+            for (let k = 0; k < 6; k++) { ctx.fillStyle = k % 2 ? '#c0392b' : '#fff'; ctx.fillRect(30 + k * 46, 300, 46, 90); }
+            ctx.strokeStyle = '#0a1d33'; ctx.lineWidth = 3; ctx.strokeRect(20, 292, 290, 108);
+            // popcorn machine
+            rr(70, 190, 90, 82, 8); fillStroke('#c0392b');
+            rr(78, 200, 74, 56, 6); fillStroke('rgba(255,255,220,0.9)', '#0a1d33', 2);
+            for (let i = 0; i < 14; i++) {
+                const px = 84 + (i * 37) % 62, py = 248 - ((i * 13 + t * 40) % 44);
+                ctx.fillStyle = '#fff6c4'; ell(px, py, 5, 4); ctx.fill();
+            }
+            rr(220, 236, 60, 36, 6); fillStroke('#2c3e50');
+            text('$', 250, 254, 16, '#2ecc71', 'center', null);
+        } },
+        { y: 362, draw(t) {
+            ctx.fillStyle = 'rgba(0,0,0,0.25)'; ell(365, 362, 44, 9); ctx.fill();
+            rr(325, 225, 80, 137, [14, 14, 4, 4]); fillStroke('#2980b9');
+            rr(335, 240, 60, 48, 6); fillStroke('#0a1d33');
+            ctx.fillStyle = `hsl(${(t * 120) % 360},90%,60%)`; ctx.fillRect(345, 252, 40, 24);
+            text('ARCADE', 365, 300, 11, '#ffd84d');
+            ell(352, 320, 6, 6); fillStroke('#e74c3c', '#0a1d33', 2); ell(378, 320, 6, 6); fillStroke('#ffd84d', '#0a1d33', 2);
+        } },
+        { y: 485, draw() {
+            ctx.fillStyle = 'rgba(0,0,0,0.25)'; ell(790, 488, 110, 10); ctx.fill();
+            rr(690, 430, 200, 20, 6); fillStroke('#8e5a2b');
+            rr(690, 455, 200, 18, 6); fillStroke('#a86a33');
+            rr(700, 470, 12, 18, 3); fillStroke('#5c3a1b'); rr(868, 470, 12, 18, 3); fillStroke('#5c3a1b');
+        } },
+        { y: 590, draw() {
+            rr(895, 515, 40, 70, 8); fillStroke('#7f4f24');
+            ctx.fillStyle = '#27ae60'; [[915, 500, 26], [900, 480, 18], [930, 478, 18], [915, 462, 16]].forEach(([x, y, r]) => { ell(x, y, r, r); fillStroke('#27ae60'); });
+        } },
+    ],
+    hotspots: [
+        { x: 420, y: 175, w: 120, h: 160, label: 'Go to the screens', walkTo: [480, 360], act: () => goRoom('theater', 'lobby') },
+        { x: 400, y: 555, w: 160, h: 40, label: 'Exit to Main Street', walkTo: [480, 580], act: () => goRoom('street', 'lobby') },
+        { x: 20, y: 185, w: 290, h: 215, label: 'Snack counter', walkTo: [200, 420], act: buyPopcorn },
+        { x: 325, y: 225, w: 80, h: 137, label: 'Arcade machine', walkTo: [365, 380], act: playArcade },
+        { x: 640, y: 140, w: 210, h: 200, label: 'Talk to Iris', walkTo: [745, 370], act: talkIris },
+        { x: 30, y: 560, w: 30, h: 22, bill: 'lobby', label: 'Something green...', walkTo: [50, 575], act: () => grabBill('lobby') },
+    ],
+    npcs: [],
+};
+
+const SCREENS = [
+    { title: 'Snake Game', url: 'snakeGame.html', col: '#2ecc71', art: 'snake' },
+    { title: 'Stick Soccer', url: 'stick/index.html', col: '#3a8fd6', art: 'ball' },
+    { title: 'Blast Block', url: 'blastblock.html', col: '#f39c12', art: 'blocks' },
+    { title: 'Age of War', url: 'ageOfWar.html', col: '#c0392b', art: 'castle' },
+];
+
+rooms.theater = {
+    title: 'The Screens', floorTop: 300, color: '#1d1530',
+    poly: [[20, 308], [940, 308], [940, 405], [535, 405], [535, 590], [425, 590], [425, 405], [20, 405]],
+    entries: { default: [480, 360], lobby: [480, 560] },
+    drawBg(t) {
+        ctx.fillStyle = '#1d1530'; ctx.fillRect(0, 0, W, 300);
+        for (let i = 0; i < 8; i++) { ctx.fillStyle = `rgba(255,224,102,${0.5 + 0.5 * Math.sin(t * 2 + i)})`; ell(60 + i * 120, 18, 5, 5); ctx.fill(); }
+        SCREENS.forEach((sc, i) => {
+            const x = 30 + i * 230, y = 40;
+            const flick = 0.85 + 0.15 * Math.sin(t * 9 + i * 2);
+            ctx.fillStyle = `rgba(255,255,255,${0.05 * flick})`;
+            ctx.beginPath(); ctx.moveTo(x, y + 150); ctx.lineTo(x + 210, y + 150); ctx.lineTo(x + 260, 420); ctx.lineTo(x - 50, 420); ctx.fill();
+            rr(x, y, 210, 150, 10); fillStroke('#c9a227');
+            rr(x + 8, y + 8, 194, 134, 6); fillStroke(sc.col, '#0a1d33', 2);
+            ctx.globalAlpha = flick; drawScreenArt(sc.art, x + 105, y + 70, t); ctx.globalAlpha = 1;
+            rr(x + 30, y + 160, 150, 30, 8); fillStroke('#0a1d33', '#c9a227', 2);
+            text(sc.title, x + 105, y + 175, 15, '#ffd84d', 'center', null);
+            text(String(i + 1), x + 22, y + 24, 16, '#fff');
+        });
+        ctx.fillStyle = '#8e1b1b';
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(28, 0); ctx.quadraticCurveTo(10, 150, 22, 300); ctx.lineTo(0, 300); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(W, 0); ctx.lineTo(W - 28, 0); ctx.quadraticCurveTo(W - 10, 150, W - 22, 300); ctx.lineTo(W, 300); ctx.fill();
+        ctx.fillStyle = '#2a2140'; ctx.fillRect(0, 300, W, 300);
+        ctx.fillStyle = '#3a2e58'; ctx.fillRect(425, 405, 110, 195);
+        ctx.fillStyle = '#ffd84d'; for (let y = 415; y < 600; y += 30) { ell(432, y, 3, 3); ctx.fill(); ell(528, y, 3, 3); ctx.fill(); }
+        rr(430, 572, 100, 24, 6); fillStroke('#c0392b', '#0a1d33', 2);
+        text('▼ LOBBY', 480, 584, 13, '#fff', 'center', null);
+    },
+    props: [455, 535].flatMap(rowY => [[40, 410], [550, 920]].map(([a, b]) => ({ y: rowY, draw() {
+        for (let x = a; x < b - 30; x += 46) {
+            rr(x, rowY - 52, 40, 36, [10, 10, 2, 2]); fillStroke('#a82a2a');
+            rr(x - 2, rowY - 22, 44, 22, 5); fillStroke('#7d1d1d');
+        }
+    } }))),
+    hotspots: SCREENS.map((sc, i) => ({ x: 30 + i * 230, y: 40, w: 210, h: 190, label: `Screen ${i + 1}: ${sc.title}`, walkTo: [135 + i * 230, 335], act: () => openScreen(sc) }))
+        .concat([{ x: 430, y: 565, w: 100, h: 35, label: 'Back to lobby', walkTo: [480, 585], act: () => goRoom('lobby', 'theater') }]),
+    npcs: [],
+};
+
+function drawScreenArt(art, cx, cy, t) {
+    if (art === 'snake') {
+        ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.strokeStyle = '#fff'; ctx.beginPath();
+        for (let i = 0; i < 20; i++) { const x = cx - 60 + i * 6, y = cy + Math.sin(i * 0.6 + t * 4) * 18; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+        ctx.stroke(); ctx.lineCap = 'butt'; ell(cx + 70, cy + 10, 8, 8); fillStroke('#e74c3c', '#0a1d33', 2);
+    } else if (art === 'ball') {
+        const bx = cx + Math.sin(t * 2) * 50, by = cy + 10 - Math.abs(Math.sin(t * 4)) * 35;
+        ctx.fillStyle = '#2ecc71'; ctx.fillRect(cx - 95, cy + 30, 190, 30);
+        ell(bx, by, 14, 14); fillStroke('#fff'); ctx.fillStyle = '#0a1d33'; ell(bx, by, 5, 5); ctx.fill();
+    } else if (art === 'blocks') {
+        const cols = ['#e74c3c', '#2ecc71', '#3a8fd6', '#9b59b6'];
+        for (let r = 0; r < 3; r++) for (let k = 0; k < 5; k++) { rr(cx - 60 + k * 24, cy - 25 + r * 24, 22, 22, 4); fillStroke(cols[(r + k + Math.floor(t)) % 4], '#0a1d33', 2); }
+    } else {
+        rr(cx - 50, cy - 10, 100, 50, 2); fillStroke('#95a5a6');
+        for (let k = 0; k < 5; k++) { ctx.fillStyle = '#95a5a6'; ctx.fillRect(cx - 50 + k * 22, cy - 22, 14, 14); ctx.strokeRect(cx - 50 + k * 22, cy - 22, 14, 14); }
+        rr(cx - 12, cy + 10, 24, 30, [12, 12, 0, 0]); fillStroke('#5c3a1b');
+        ctx.fillStyle = '#ffd84d'; ctx.beginPath(); ctx.moveTo(cx, cy - 50); ctx.lineTo(cx + 26, cy - 42 + Math.sin(t * 5) * 3); ctx.lineTo(cx, cy - 34); ctx.fill();
+        ctx.fillRect(cx - 2, cy - 50, 3, 30);
+    }
+}
+
+const LAVA = { x: 620, y: 470, rx: 170, ry: 60 };
+rooms.cave = {
+    title: 'Under the Street', floorTop: 290, color: '#e67e22',
+    poly: [[20, 300], [940, 300], [940, 590], [20, 590]],
+    entries: { default: [150, 420], street: [150, 420] },
+    drawBg(t) {
+        const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#1a0a0a'); g.addColorStop(1, '#4a1a0e');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#2e1410';
+        for (let i = 0; i < 12; i++) { const x = i * 85 + 20; ctx.beginPath(); ctx.moveTo(x - 25, 0); ctx.lineTo(x, 50 + (i * 37) % 70); ctx.lineTo(x + 25, 0); ctx.fill(); }
+        ctx.fillStyle = '#3d1c14';
+        ctx.beginPath(); ctx.moveTo(0, 300); for (let x = 0; x <= W; x += 60) ctx.lineTo(x, 270 + Math.sin(x * 0.05) * 20); ctx.lineTo(W, 300); ctx.fill();
+        ctx.fillStyle = '#5a2a1a'; ctx.fillRect(0, 300, W, 300);
+        ctx.fillStyle = 'rgba(0,0,0,0.15)'; for (let i = 0; i < 25; i++) { ell((i * 173) % W, 320 + (i * 97) % 270, 18, 6); ctx.fill(); }
+        // lava
+        const pulse = 0.5 + 0.5 * Math.sin(t * 2);
+        ctx.fillStyle = `rgba(255,120,30,${0.18 + 0.1 * pulse})`; ell(LAVA.x, LAVA.y, LAVA.rx + 60, LAVA.ry + 30); ctx.fill();
+        ell(LAVA.x, LAVA.y, LAVA.rx, LAVA.ry); fillStroke('#ff6a00', '#2e1410', 5);
+        ell(LAVA.x, LAVA.y, LAVA.rx - 30, LAVA.ry - 15); ctx.fillStyle = '#ffb02e'; ctx.fill();
+        for (let i = 0; i < 6; i++) {
+            const a = t * 0.7 + i, bx = LAVA.x + Math.cos(a) * (LAVA.rx - 50), by = LAVA.y + Math.sin(a * 1.3) * (LAVA.ry - 25);
+            const r = 4 + ((t * 3 + i) % 1) * 8; ell(bx, by, r, r * 0.7); ctx.fillStyle = '#ffe066'; ctx.fill();
+        }
+        text('very hot', LAVA.x, LAVA.y + LAVA.ry + 18, 13, '#ffb02e');
+        // ladder
+        ctx.fillStyle = '#000'; ell(105, 40, 60, 20); ctx.fill();
+        ctx.strokeStyle = '#8e5a2b'; ctx.lineWidth = 7;
+        ctx.beginPath(); ctx.moveTo(80, 40); ctx.lineTo(80, 390); ctx.moveTo(130, 40); ctx.lineTo(130, 390); ctx.stroke();
+        ctx.lineWidth = 5; for (let y = 70; y < 390; y += 36) { ctx.beginPath(); ctx.moveTo(80, y); ctx.lineTo(130, y); ctx.stroke(); }
+        text('▲ UP', 105, 410, 14, '#ffd84d');
+    },
+    props: [],
+    hotspots: [
+        { x: 60, y: 30, w: 90, h: 370, label: 'Climb back up', walkTo: [105, 395], act: () => goRoom('street', 'cave') },
+        { x: 290, y: 515, w: 30, h: 20, bill: 'cave', label: 'Something green...', walkTo: [305, 540], act: () => grabBill('cave') },
+    ],
+    npcs: [],
+};
+
+// NPCs
+rooms.street.npcs.push(makeBuddy('Officer Dale', '#2c4a8a', 260, 470, { hat: 'cap', wander: true,
+    lines: ['Move along, citizen.', 'Nice night for a movie.', 'Keep out of that dumpster.'] }));
+rooms.street.npcs.push(makeBuddy('Pip', '#ff7eb6', 680, 430, { wander: true, lines: ['Have you seen Snake yet?', 'The marquee lights are so pretty!'] }));
+const gerald = makeBuddy('Gerald', '#95a5a6', 790, 462, { sit: true, hat: 'tophat', lines: ['...hungry...', 'I have been on this bench a while.'],
+    onClick: clickGerald });
+rooms.lobby.npcs.push(gerald);
+rooms.lobby.npcs.push(makeBuddy('Momo', '#1abc9c', 560, 440, { wander: true, lines: ['The popcorn here is elite.', 'Screen 4 is my favorite.', 'Iris gives me chills...'] }));
+rooms.theater.npcs.push(makeBuddy('Juno', '#f39c12', 700, 350, { wander: true, lines: ['Shh, the movie is starting!', 'Try Blast Block!', 'Who spilled the soda?'] }));
+rooms.theater.npcs.push(makeBuddy('Bix', '#9b59b6', 250, 360, { wander: true, lines: ['I got a high score on Snake!', 'These seats are comfy.'] }));
+
+let room = rooms.street;
+let fade = 1, fadeTo = null;
+
+// ---------- actions ----------
+function goRoom(name, from) {
+    fadeTo = () => {
+        room = rooms[name];
+        const e = room.entries[from] || room.entries.default;
+        player.x = player.tx = e[0]; player.y = player.ty = e[1];
+        toast(room.title);
+    };
+}
+
+function buyPopcorn() {
+    if (state.popcorn) return say(player, 'I already have popcorn!');
+    if (state.coins < 3) return say(player, 'Not enough coins... (3c)');
+    state.coins -= 3; state.popcorn = true; say(player, 'Got popcorn! 🍿');
+}
+
+function playArcade() {
+    if (state.coins < 2) return say(player, 'Arcade costs 2 coins.');
+    state.coins -= 2;
+    const roll = Math.random();
+    const win = roll < 0.15 ? 10 : roll < 0.5 ? 4 : 0;
+    state.coins += win;
+    say(player, win ? `Arcade paid out ${win} coins!` : 'Lost 2 coins. Rigged!');
+}
+
+function grabBill(id) { state.bills.add(id); state.coins += 5; say(player, `Found a $5 bill! (${state.bills.size}/3)`); }
+
+function clickGerald() {
+    if (state.strangerFed) return say(gerald, 'Thank you, friend. Tell her it is done.');
+    if (state.popcorn) { state.popcorn = false; state.strangerFed = true; say(gerald, '...for me? Here. Take this. It was never mine.', 5); }
+    else say(gerald, '...so hungry. Is there popcorn?');
+}
+
+function openScreen(sc) {
+    if (!state.ticket) return say(player, 'I need a ticket from Iris first.');
+    document.getElementById('gameTitle').textContent = `🎬 Now playing: ${sc.title}`;
+    document.getElementById('gameFrame').src = sc.url;
+    document.getElementById('gameModal').classList.add('open');
+}
+
+const QUESTS = [
+    { title: 'A Debt on the Bench', ask: 'The one on the bench is holding something that belongs to this building. Feed him. Do not ask me why I cannot.',
+      goal: 'Bring popcorn to Gerald on the bench.', done: () => state.strangerFed, reward: 5,
+      thanks: 'He gave it to you. Good. He has been holding it against me for years.' },
+    { title: 'Loose Change', ask: 'Money falls out of guests, and the building hides it. Three bills. Find every one.',
+      goal: 'Find 3 hidden $5 bills', progress: () => `${state.bills.size}/3`, done: () => state.bills.size >= 3, reward: 10,
+      thanks: 'Beside the bins, in the corner, beneath the street. Take this. Call it interest.' },
+    { title: 'Fall For Me', ask: 'There is a cave under the street. I have never seen what the heat does to a guest. Fall in. Just once.',
+      goal: 'Fall into the lava under the street.', done: () => state.fellInLava, reward: 15,
+      thanks: 'You came back warm. The cave remembers you now. That will matter later.' },
+];
+
+function talkIris() {
+    const btns = [];
+    if (!state.ticket) btns.push({ label: 'Buy ticket (5c)', fn: () => {
+        if (state.coins < 5) return showDialog('Iris', 'Five coins. The arcade will lend you some. It always does.', [{ label: 'OK', fn: closeDialog }]);
+        state.coins -= 5; state.ticket = true; closeDialog(); say(player, 'Got a ticket! 🎟️');
+    } });
+    const q = QUESTS[state.quest];
+    if (!q) return showDialog('Iris', 'Nothing more. For now. Go watch something.', btns.concat({ label: 'Bye', fn: closeDialog, alt: true }));
+    if (!state.questActive) {
+        showDialog('Iris', q.ask, btns.concat({ label: 'I\'ll do it', fn: () => { state.questActive = true; closeDialog(); toast(`New task: ${q.title}`); } }, { label: 'Later', fn: closeDialog, alt: true }));
+    } else if (q.done()) {
+        showDialog('Iris', q.thanks + ` (+${q.reward} coins)`, [{ label: 'OK', fn: () => {
+            state.coins += q.reward; state.quest++; state.questActive = false; closeDialog();
+        } }]);
+    } else {
+        showDialog('Iris', `You have not finished. ${q.goal}`, btns.concat({ label: 'Bye', fn: closeDialog, alt: true }));
+    }
+}
+
+// ---------- dialog / overlays ----------
+function showDialog(name, txt, buttons) {
+    document.getElementById('dlgName').textContent = name;
+    document.getElementById('dlgText').textContent = txt;
+    const box = document.getElementById('dlgBtns'); box.innerHTML = '';
+    buttons.forEach(b => { const el = document.createElement('button'); el.className = 'pbtn' + (b.alt ? ' alt' : ''); el.textContent = b.label; el.onclick = b.fn; box.appendChild(el); });
+    document.getElementById('dialog').classList.add('open');
+}
+function closeDialog() { document.getElementById('dialog').classList.remove('open'); }
+function anyOverlay() { return document.querySelector('.overlay.open'); }
+
+document.getElementById('gameClose').onclick = () => {
+    document.getElementById('gameModal').classList.remove('open');
+    document.getElementById('gameFrame').src = 'about:blank';
+};
+const mapGrid = document.getElementById('mapGrid');
+[['street', 'Main Street'], ['lobby', 'Lobby'], ['theater', 'The Screens'], ['cave', 'Under the Street']].forEach(([id, label]) => {
+    const b = document.createElement('button'); b.textContent = label; b.style.background = rooms[id].color;
+    b.onclick = () => { document.getElementById('map').classList.remove('open'); if (room !== rooms[id]) goRoom(id, 'default'); };
+    mapGrid.appendChild(b);
+});
+document.getElementById('mapBtn').onclick = () => document.getElementById('map').classList.add('open');
+document.getElementById('mapClose').onclick = () => document.getElementById('map').classList.remove('open');
+document.querySelectorAll('.emote').forEach(b => b.onclick = () => say(player, b.dataset.e, 3));
+const chat = document.getElementById('chat');
+chat.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && chat.value.trim()) {
+        say(player, chat.value.trim(), 5); chat.value = '';
+        const near = room.npcs.filter(n => n.lines.length && Math.hypot(n.x - player.x, n.y - player.y) < 260);
+        if (near.length) { const n = near[Math.floor(Math.random() * near.length)]; setTimeout(() => say(n, ['Hi!', 'Hey there!', 'lol', 'Same!', 'Welcome to Kai Cinema!'][Math.floor(Math.random() * 5)]), 900); }
+    }
+});
+const sw = document.getElementById('swatches');
+COLORS.forEach(c => {
+    const d = document.createElement('div'); d.className = 'swatch' + (c === player.color ? ' on' : ''); d.style.background = c;
+    d.onclick = () => { player.color = c; sw.querySelectorAll('.swatch').forEach(s => s.classList.remove('on')); d.classList.add('on'); };
+    sw.appendChild(d);
+});
+
+// ---------- input ----------
+let mouse = { x: -1, y: -1 }, hover = null;
+function toCanvas(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; }
+function hitHotspot(p) {
+    for (const h of room.hotspots) {
+        if (h.bill && state.bills.has(h.bill)) continue;
+        if (p.x >= h.x && p.x <= h.x + h.w && p.y >= h.y && p.y <= h.y + h.h) return h;
+    }
+    for (const n of room.npcs) if (n.onClick && Math.hypot(p.x - n.x, p.y - (n.y - 40)) < 40)
+        return { label: `Talk to ${n.name}`, walkTo: [n.x - 70, n.y + 20], act: n.onClick };
+    return null;
+}
+function clampWalk(x, y) {
+    if (inPoly(x, y, room.poly)) return [x, y];
+    for (let t = 1; t >= 0; t -= 0.02) { const px = player.x + (x - player.x) * t, py = player.y + (y - player.y) * t; if (inPoly(px, py, room.poly)) return [px, py]; }
+    return [player.x, player.y];
+}
+cv.addEventListener('mousemove', e => { mouse = toCanvas(e); hover = hitHotspot(mouse); cv.style.cursor = hover ? 'pointer' : 'default'; });
+cv.addEventListener('mouseleave', () => { hover = null; mouse = { x: -1, y: -1 }; });
+cv.addEventListener('click', e => {
+    if (anyOverlay() || fadeTo || player.sink > 0) return;
+    const p = toCanvas(e); const h = hitHotspot(p);
+    if (h) { [player.tx, player.ty] = clampWalk(h.walkTo[0], h.walkTo[1]); pendingAction = h.act; }
+    else { [player.tx, player.ty] = clampWalk(p.x, p.y); pendingAction = null; }
+});
+
+// ---------- update ----------
+function moveBuddy(b, dt) {
+    const dx = b.tx - b.x, dy = b.ty - b.y, d = Math.hypot(dx, dy);
+    const sp = 230 * scaleAt(room, b.y) * dt;
+    if (d > 2) { b.moving = true; b.x += dx / d * Math.min(sp, d); b.y += dy / d * Math.min(sp, d); if (Math.abs(dx) > 1) b.dir = dx > 0 ? 1 : -1; b.phase += dt * 12; }
+    else { b.moving = false; b.phase = 0; }
+    if (b.sayT > 0) { b.sayT -= dt; if (b.sayT <= 0) b.say = ''; }
+    return d <= 2;
+}
+
+function update(dt) {
+    if (fadeTo) { fade -= dt * 4; if (fade <= 0) { fade = 0; fadeTo(); fadeTo = null; } }
+    else if (fade < 1) fade = Math.min(1, fade + dt * 4);
+
+    if (player.sink > 0) {
+        player.sink += dt * 0.8;
+        if (player.sink >= 1) {
+            player.sink = 0; state.fellInLava = true;
+            const e = room.entries.default; player.x = player.tx = e[0]; player.y = player.ty = e[1];
+            say(player, 'OUCH. That was hot.');
+        }
+        if (player.sayT > 0) player.sayT -= dt;
+    } else {
+        const arrived = moveBuddy(player, dt);
+        if (arrived && pendingAction) { const a = pendingAction; pendingAction = null; a(); }
+        if (room === rooms.cave) {
+            const nx = (player.x - LAVA.x) / (LAVA.rx - 15), ny = (player.y - LAVA.y) / (LAVA.ry - 8);
+            if (nx * nx + ny * ny < 1) { player.sink = 0.01; player.tx = player.x; player.ty = player.y; pendingAction = null; say(player, 'AAAAH!', 2); }
+        }
+    }
+    for (const n of room.npcs) {
+        moveBuddy(n, dt);
+        if (n.wander && (n.nextWander -= dt) <= 0) {
+            n.nextWander = 2 + Math.random() * 4;
+            for (let k = 0; k < 10; k++) { const x = 40 + Math.random() * 880, y = room.floorTop + 20 + Math.random() * (H - room.floorTop - 40); if (inPoly(x, y, room.poly)) { n.tx = x; n.ty = y; break; } }
+        }
+        if (n.lines.length && (n.nextLine -= dt) <= 0) { n.nextLine = 6 + Math.random() * 8; say(n, n.lines[Math.floor(Math.random() * n.lines.length)]); }
+    }
+    if (toastT > 0) toastT -= dt;
+}
+
+// ---------- render ----------
+function drawHud() {
+    rr(12, 12, 300, 44, 22); fillStroke('rgba(255,255,255,0.92)');
+    ell(36, 34, 13, 13); fillStroke('#ffd84d', '#0a1d33', 2.5); text('c', 36, 34, 14, '#a07800', 'center', null);
+    text(String(state.coins), 56, 34, 20, '#0a1d33', 'left', null);
+    text(state.ticket ? '🎟️' : '', 120, 34, 22, '#000', 'center', null);
+    text(state.popcorn ? '🍿' : '', 150, 34, 22, '#000', 'center', null);
+    text(room.title, 298, 34, 14, '#1f66a8', 'right', null);
+    const q = QUESTS[state.quest];
+    if (q && state.questActive) {
+        const label = `${q.done() ? '✔ Return to Iris' : q.goal}${q.progress && !q.done() ? ' ' + q.progress() : ''}`;
+        ctx.font = 'bold 14px "Trebuchet MS", Arial'; const w = Math.max(ctx.measureText(label).width, ctx.measureText(q.title).width) + 30;
+        rr(W - w - 12, 12, w, 52, 14); fillStroke('rgba(29,21,48,0.88)', '#c9a227', 2.5);
+        text(q.title, W - w / 2 - 12, 28, 13, '#ffd84d', 'center', null);
+        text(label, W - w / 2 - 12, 48, 14, '#fff', 'center', null);
+    }
+    if (hover && mouse.x >= 0) {
+        ctx.font = 'bold 14px "Trebuchet MS", Arial'; const w = ctx.measureText(hover.label).width + 20;
+        const x = Math.min(W - w - 4, mouse.x + 14), y = Math.max(4, mouse.y - 34);
+        rr(x, y, w, 26, 10); fillStroke('#fff', '#0a1d33', 2.5);
+        text(hover.label, x + w / 2, y + 13, 14, '#0a1d33', 'center', null);
+    }
+    if (toastT > 0) {
+        ctx.globalAlpha = Math.min(1, toastT * 2);
+        ctx.font = 'bold 20px "Trebuchet MS", Arial'; const w = ctx.measureText(toastMsg).width + 40;
+        rr(W / 2 - w / 2, 70, w, 40, 20); fillStroke('#ffd84d');
+        text(toastMsg, W / 2, 90, 20, '#0a1d33', 'center', null);
+        ctx.globalAlpha = 1;
+    }
+}
+
+function render(t) {
+    ctx.clearRect(0, 0, W, H);
+    room.drawBg(t);
+    for (const h of room.hotspots) if (h.bill && !state.bills.has(h.bill)) drawBill(h.x + h.w / 2, h.y + h.h / 2, t);
+    const list = room.props.map(p => ({ y: p.y, draw: () => p.draw(t) }))
+        .concat([player, ...room.npcs].map(b => ({ y: b.y, draw: () => drawBuddy(b, room) })));
+    list.sort((a, b) => a.y - b.y).forEach(o => o.draw());
+    if (room === rooms.cave) { ctx.fillStyle = `rgba(255,90,0,${0.06 + 0.03 * Math.sin(t * 3)})`; ctx.fillRect(0, 0, W, H); }
+    [player, ...room.npcs].forEach(b => drawBubble(b, room));
+    drawHud();
+    if (fade < 1) { ctx.fillStyle = `rgba(10,29,51,${1 - fade})`; ctx.fillRect(0, 0, W, H); }
+}
+
+let last = performance.now();
+function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    update(dt); render(now / 1000);
+    requestAnimationFrame(loop);
+}
+toast('Welcome to Kai Cinema!');
+say(player, 'Click to walk around!', 5);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
