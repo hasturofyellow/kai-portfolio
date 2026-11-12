@@ -19,8 +19,11 @@ export class Player {
         this._jumpAction    = null;
         this._runJumpAction = null;
         this._sitAction     = null;
+        this._cuffedAction  = null;
         this._activeAction  = null;
         this.isSitting      = false;
+        this.isHandcuffed   = false;
+        this._handcuffVisual = null;
 
         this._holdSlot = null;
 
@@ -79,6 +82,7 @@ export class Player {
                 this._jumpAction    = actionFor('HumanArmature|Man_Jump');
                 this._runJumpAction = actionFor('HumanArmature|Man_RunningJump');
                 this._sitAction     = actionFor('HumanArmature|Man_Sitting');
+                this._cuffedAction  = actionFor('HumanArmature|Man_Clapping');
 
                 // Match the authored animation cadence to the actual travel
                 // speed so feet feel planted instead of skating.
@@ -100,6 +104,9 @@ export class Player {
                 } else {
                     console.warn('Player model has no idle or standing animation; keeping its bind pose at rest.');
                 }
+                // The arrest preview can begin before the FBX finishes loading.
+                // Reapply the restrained pose as soon as its clip is available.
+                if (this.isHandcuffed) this.setHandcuffed(true);
             }
 
             // Attach hold slot to right hand bone, falling back to a fixed offset
@@ -116,15 +123,16 @@ export class Player {
         }, undefined, () => this._createFallbackMesh());
     }
 
-    _setAction(action) {
+    _setAction(action, fadeDuration = 0.12) {
         if (!action) {
             if (this._activeAction) this._activeAction.stop();
             this._activeAction = null;
             return;
         }
         if (this._activeAction === action) return;
+        action.enabled = true;
         action.reset().setEffectiveWeight(1).play();
-        if (this._activeAction) this._activeAction.crossFadeTo(action, 0.2, false);
+        if (this._activeAction) this._activeAction.crossFadeTo(action, fadeDuration, false);
         this._activeAction = action;
     }
 
@@ -164,6 +172,53 @@ export class Player {
     setSitting(sitting) {
         this.isSitting = sitting;
         if (sitting) this._setAction(this._sitAction);
+    }
+
+    setHandcuffed(handcuffed) {
+        this.isHandcuffed = handcuffed;
+        if (handcuffed) {
+            this.velocity.set(0, 0, 0);
+            if (this._cuffedAction) {
+                this._setAction(this._cuffedAction, 0.08);
+                this._cuffedAction.time = this._cuffedAction.getClip().duration * 0.48;
+                this._cuffedAction.paused = true;
+                this.mixer?.update(0);
+            }
+            if (!this._handcuffVisual) {
+                const cuffs = new THREE.Group();
+                const metal = new THREE.MeshStandardMaterial({
+                    color: 0xd6e0e8,
+                    metalness: 0.95,
+                    roughness: 0.18,
+                });
+                for (const x of [-0.35, 0.35]) {
+                    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.105, 0.026, 10, 24), metal);
+                    cuff.position.x = x;
+                    cuff.rotation.y = Math.PI / 2;
+                    cuff.castShadow = true;
+                    cuffs.add(cuff);
+                }
+                const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.62, 8), metal);
+                chain.rotation.z = Math.PI / 2;
+                chain.castShadow = true;
+                cuffs.add(chain);
+                cuffs.position.set(0, 3.35, 0.44);
+                this.mesh.add(cuffs);
+                this._handcuffVisual = cuffs;
+            }
+            return;
+        }
+
+        if (this._cuffedAction) this._cuffedAction.paused = false;
+        if (this._handcuffVisual) {
+            this.mesh.remove(this._handcuffVisual);
+            this._handcuffVisual.traverse(child => {
+                child.geometry?.dispose?.();
+                child.material?.dispose?.();
+            });
+            this._handcuffVisual = null;
+        }
+        this._setAction(this._idleAction, 0.08);
     }
 
     setPosition(x, y, z) {
@@ -335,14 +390,14 @@ export class Player {
                 const isMoving = Math.abs(this.velocity.x) > 0.3 || Math.abs(this.velocity.z) > 0.3;
                 const isRunning = Input.isKeyDown('ShiftLeft') || Input.isKeyDown('ShiftRight');
                 if (!this.isGrounded) {
-                    if (this._lastJumpWasDouble || (isMoving && isRunning)) this._setAction(this._runJumpAction);
-                    else                       this._setAction(this._jumpAction);
+                    if (this._lastJumpWasDouble || (isMoving && isRunning)) this._setAction(this._runJumpAction, 0.07);
+                    else                       this._setAction(this._jumpAction, 0.07);
                 } else if (isMoving && isRunning) {
-                    this._setAction(this._runAction);
+                    this._setAction(this._runAction, 0.1);
                 } else if (isMoving) {
-                    this._setAction(this._walkAction);
+                    this._setAction(this._walkAction, 0.1);
                 } else {
-                    this._setAction(this._idleAction);
+                    this._setAction(this._idleAction, 0.16);
                 }
             }
             this.mixer.update(dt);

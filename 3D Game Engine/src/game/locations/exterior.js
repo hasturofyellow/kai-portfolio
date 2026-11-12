@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { Collision } from '../collision.js';
 import { mountSecondFeatureProp } from '../objects/secondFeatureProps.js';
+import { loadPatrolOfficer } from '../objects/patrolOfficer.js?v=20261112-11';
 
 // Refined color palette - Deep blue as PRIMARY grounding color
 const COLORS = {
@@ -28,8 +29,14 @@ export class ExteriorScene {
         this.moneyStacks = [];
         this.time = 0;
         this.npcMixer = null;
+        this.policeWalk = null;
+        this.policePatrol = null;
         this.ticketTrigger = null;
         this.posterTriggers = [];
+        this.jailPortalTrigger = null;
+        this.jailPortalRing = null;
+        this.jailPortalFill = null;
+        this.jailPortalLight = null;
     }
 
     build() {
@@ -41,6 +48,7 @@ export class ExteriorScene {
         this.createTicketBooth();
         this.createStreetLamps();
         this.createEntranceDoors();
+        this.createJailPortal();
         this.createNeonDecorations();
         this.createPreviewPosters();
         this.createDumpster();
@@ -50,6 +58,31 @@ export class ExteriorScene {
         this.createMoneyStack('ext-corner', -17.5, -8);
         this.setupLighting();
         this.buildTicketNPC();
+        this.buildPatrolOfficer();
+    }
+
+    buildPatrolOfficer() {
+        // Patrol the public frontage without crossing the entrance, ticket
+        // booth, dumpster, portal, or the player's initial spawn position.
+        const points = [
+            new THREE.Vector3(-24, 0, 3),
+            new THREE.Vector3(-24, 0, 10),
+            new THREE.Vector3(24, 0, 10),
+            new THREE.Vector3(24, 0, 3),
+            new THREE.Vector3(17, 0, 3),
+            new THREE.Vector3(17, 0, 7),
+            new THREE.Vector3(-17, 0, 7),
+            new THREE.Vector3(-17, 0, 3),
+        ];
+        const root = new THREE.Group();
+        root.position.copy(points[0]);
+        root.rotation.y = 0;
+        this.scene.add(root);
+        this.objects.push(root);
+
+        loadPatrolOfficer(root, walk => { this.policeWalk = walk; });
+
+        this.policePatrol = { root, points, targetIndex: 1, speed: 1.55, turnSpeed: 5 };
     }
 
     buildTicketNPC() {
@@ -171,7 +204,9 @@ export class ExteriorScene {
 
     createStreet() {
         // Dark asphalt
-        const streetGeo = new THREE.PlaneGeometry(100, 40);
+        // Extend behind the far-side spawn so the third-person camera remains
+        // over visible road instead of looking past the edge of the ground.
+        const streetGeo = new THREE.PlaneGeometry(100, 60);
         const streetMat = new THREE.MeshStandardMaterial({
             color: 0x1a1a25,
             roughness: 0.7,
@@ -225,8 +260,8 @@ export class ExteriorScene {
         this.objects.push(sidewalkCollider);
         Collision.addCollider(sidewalkCollider);
 
-        // Street slab (z: 5 to 45)
-        const streetCollider = new THREE.Mesh(new THREE.BoxGeometry(100, 0.2, 40));
+        // Street slab (z: -5 to 55), extended for the far-side starting view.
+        const streetCollider = new THREE.Mesh(new THREE.BoxGeometry(100, 0.2, 60));
         streetCollider.position.set(0, -0.2, 25);
         streetCollider.visible = false;
         this.scene.add(streetCollider);
@@ -248,14 +283,16 @@ export class ExteriorScene {
 
     createTheaterBuilding() {
         // Main facade - DEEP BLUE (primary - architecture)
-        const facadeGeo = new THREE.BoxGeometry(64, 24, 2);
+        // Keep the roofline close to the marquee and edge lighting so the
+        // decorated facade reads as one complete composition.
+        const facadeGeo = new THREE.BoxGeometry(64, 21, 2);
         const facadeMat = new THREE.MeshStandardMaterial({
             color: COLORS.primary,
             roughness: 0.5,
             metalness: 0.25
         });
         const facade = new THREE.Mesh(facadeGeo, facadeMat);
-        facade.position.set(0, 12, -10);
+        facade.position.set(0, 10.5, -10);
         facade.castShadow = true;
         facade.receiveShadow = true;
         this.scene.add(facade);
@@ -582,6 +619,109 @@ export class ExteriorScene {
         this.scene.add(trigger);
         this.objects.push(trigger);
         this.doorTrigger = trigger;
+    }
+
+    createJailPortal() {
+        // Small, clearly signed security portal immediately left of the main
+        // entrance. It is intentionally distinct from the cinema's cyan/magenta
+        // wayfinding so players understand that it leads somewhere unusual.
+        const x = -8.5;
+        const z = -7.55;
+        const ringMat = new THREE.MeshStandardMaterial({
+            color: 0xffb020,
+            emissive: 0xff7a18,
+            emissiveIntensity: 1.35,
+            metalness: 0.8,
+            roughness: 0.22,
+        });
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.18, 16, 56), ringMat);
+        ring.position.set(x, 1.65, z);
+        ring.castShadow = true;
+        this.scene.add(ring);
+        this.objects.push(ring);
+        this.jailPortalRing = ring;
+
+        const fillMat = new THREE.MeshBasicMaterial({
+            color: 0xff304f,
+            transparent: true,
+            opacity: 0.34,
+            side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+        });
+        const fill = new THREE.Mesh(new THREE.CircleGeometry(1.15, 48), fillMat);
+        fill.position.set(x, 1.65, z - 0.03);
+        this.scene.add(fill);
+        this.objects.push(fill);
+        this.jailPortalFill = fill;
+
+        const pedestal = new THREE.Mesh(
+            new THREE.CylinderGeometry(1.7, 2.0, 0.35, 36),
+            new THREE.MeshStandardMaterial({ color: 0x15111c, metalness: 0.72, roughness: 0.3 })
+        );
+        pedestal.position.set(x, 0.18, z);
+        pedestal.castShadow = true;
+        this.scene.add(pedestal);
+        this.objects.push(pedestal);
+        Collision.addCollider(pedestal);
+
+        // Use an opaque, non-glowing placard here. The old transparent neon
+        // lettering was washed out by the portal light and bloom pass.
+        const signCanvas = document.createElement('canvas');
+        signCanvas.width = 1024;
+        signCanvas.height = 240;
+        const signContext = signCanvas.getContext('2d');
+        signContext.fillStyle = '#110d18';
+        signContext.fillRect(0, 0, signCanvas.width, signCanvas.height);
+        signContext.strokeStyle = '#ffb020';
+        signContext.lineWidth = 18;
+        signContext.strokeRect(10, 10, signCanvas.width - 20, signCanvas.height - 20);
+        signContext.fillStyle = '#fff4cf';
+        signContext.font = '900 76px Arial, sans-serif';
+        signContext.textAlign = 'center';
+        signContext.textBaseline = 'middle';
+        signContext.fillText('SECURITY HOLDING', signCanvas.width / 2, signCanvas.height / 2);
+
+        const signTexture = new THREE.CanvasTexture(signCanvas);
+        signTexture.colorSpace = THREE.SRGBColorSpace;
+        const signBacking = new THREE.Mesh(
+            new THREE.BoxGeometry(4.75, 1.2, 0.16),
+            new THREE.MeshStandardMaterial({ color: 0x08060c, metalness: 0.65, roughness: 0.32 })
+        );
+        signBacking.position.set(x, 3.75, z - 0.02);
+        this.scene.add(signBacking);
+        this.objects.push(signBacking);
+
+        const sign = new THREE.Mesh(
+            new THREE.PlaneGeometry(4.5, 0.98),
+            new THREE.MeshBasicMaterial({ map: signTexture, toneMapped: false })
+        );
+        sign.position.set(x, 3.75, z + 0.08);
+        this.scene.add(sign);
+        this.objects.push(sign);
+
+        // A floor halo makes the target visible even when the player approaches
+        // with the camera angled down.
+        const halo = new THREE.Mesh(
+            new THREE.TorusGeometry(2.0, 0.07, 10, 48),
+            new THREE.MeshBasicMaterial({ color: 0xffb020, transparent: true, opacity: 0.8 })
+        );
+        halo.rotation.x = Math.PI / 2;
+        halo.position.set(x, 0.04, z + 0.15);
+        this.scene.add(halo);
+        this.objects.push(halo);
+
+        this.jailPortalLight = new THREE.PointLight(0xff5a32, 2.8, 12);
+        this.jailPortalLight.position.set(x, 2, z + 0.8);
+        this.scene.add(this.jailPortalLight);
+        this.lights.push(this.jailPortalLight);
+
+        const trigger = new THREE.Mesh(new THREE.BoxGeometry(3.4, 4, 3.2));
+        trigger.visible = false;
+        trigger.position.set(x, 2, z + 0.6);
+        this.scene.add(trigger);
+        this.objects.push(trigger);
+        this.jailPortalTrigger = trigger;
     }
 
     createNeonDecorations() {
@@ -911,6 +1051,12 @@ export class ExteriorScene {
         }
     }
 
+    setupJailPortalTrigger(callback) {
+        if (this.jailPortalTrigger) {
+            Collision.addTrigger(this.jailPortalTrigger, callback, 'exterior-jail-portal');
+        }
+    }
+
     setupDumpsterTrigger(callback) {
         if (this.dumpsterTrigger) {
             Collision.addTrigger(this.dumpsterTrigger, callback, 'dumpster');
@@ -932,6 +1078,40 @@ export class ExteriorScene {
     update(dt) {
         this.time += dt;
         if (this.npcMixer) this.npcMixer.update(dt);
+        this.policeWalk?.update(dt);
+
+        const patrol = this.policePatrol;
+        if (patrol) {
+            const target = patrol.points[patrol.targetIndex];
+            const offset = target.clone().sub(patrol.root.position);
+            const distance = offset.length();
+            if (distance < 0.12) {
+                patrol.root.position.copy(target);
+                patrol.targetIndex = (patrol.targetIndex + 1) % patrol.points.length;
+            } else {
+                const direction = offset.multiplyScalar(1 / distance);
+                patrol.root.position.addScaledVector(direction, Math.min(distance, patrol.speed * dt));
+                const desiredYaw = Math.atan2(direction.x, direction.z);
+                const yawDelta = Math.atan2(
+                    Math.sin(desiredYaw - patrol.root.rotation.y),
+                    Math.cos(desiredYaw - patrol.root.rotation.y)
+                );
+                patrol.root.rotation.y += yawDelta * Math.min(1, patrol.turnSpeed * dt);
+            }
+        }
+
+        if (this.jailPortalRing) {
+            this.jailPortalRing.rotation.z += dt * 0.7;
+            const pulse = 1 + Math.sin(this.time * 3.6) * 0.055;
+            this.jailPortalRing.scale.setScalar(pulse);
+        }
+        if (this.jailPortalFill) {
+            this.jailPortalFill.rotation.z -= dt * 0.32;
+            this.jailPortalFill.material.opacity = 0.26 + (Math.sin(this.time * 2.8) + 1) * 0.04;
+        }
+        if (this.jailPortalLight) {
+            this.jailPortalLight.intensity = 2.2 + (Math.sin(this.time * 4.1) + 1) * 0.4;
+        }
 
         // Subtle marquee light chase animation
         for (let i = 0; i < this.marqueeLights.length; i++) {
@@ -946,11 +1126,14 @@ export class ExteriorScene {
     }
 
     getSpawnPoint() {
-        return new THREE.Vector3(0, 1, 12);
+        // Begin near the far curb so the player crosses the road toward the
+        // theater instead of appearing halfway through the approach.
+        return new THREE.Vector3(0, 1, 40);
     }
 
     dispose() {
         if (this.npcMixer) { this.npcMixer.stopAllAction(); this.npcMixer = null; }
+        this.policeWalk = null;
 
         for (const obj of this.objects) {
             this.scene.remove(obj);

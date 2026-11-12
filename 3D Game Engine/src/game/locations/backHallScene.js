@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { Collision } from '../collision.js';
 import { mountSecondFeatureProp } from '../objects/secondFeatureProps.js';
+import { loadPatrolOfficer } from '../objects/patrolOfficer.js?v=20261112-11';
 
 const GOLD = 0xd7b767;
 const CYAN = 0x00caeb;
@@ -15,6 +16,8 @@ export class BackHallScene {
         this.mixers = [];
         this.theaterTriggers = [];
         this.arcadeTriggers = [];
+        this.policePatrol = null;
+        this.policeWalk = null;
     }
 
     build() {
@@ -153,7 +156,7 @@ export class BackHallScene {
             position: [7.75, 2.4, 21.35], scale: 2
         });
         this._textSign('POPCORN • DRINKS • HOT FOOD', 9, 1.25, [6.6, 6.7, 20.4], 0, 0x55fc77);
-        this._loadNpc('../Animated Men Characters - Feb 2019/FBX/Male_Suit.fbx', [6.5, 0, 23.5], [6.5, 0, 19], 'concession');
+        this._loadNpc('../Animated Men Characters - Feb 2019/FBX/Male_Suit.fbx', [6.5, 0, 23.5], [6.5, 0, 19]);
         const concessionTrigger = new THREE.Mesh(new THREE.BoxGeometry(10, 6, 7));
         concessionTrigger.visible = false;
         concessionTrigger.position.set(6.5, 3, 18.5);
@@ -198,14 +201,37 @@ export class BackHallScene {
     }
 
     _police() {
-        this._loadNpc('../Animated Men Characters - Feb 2019/FBX/Male_LongSleeve.fbx', [0, 0, 4], [0, 0, 18], 'police');
+        this._loadPatrolOfficer();
         this._textSign('CINEMA SECURITY • TICKETS READY', 10, 1.0, [0, 6.5, -28.9], 0, GOLD);
-        const trigger = new THREE.Mesh(new THREE.BoxGeometry(8, 6, 8));
-        trigger.visible = false; trigger.position.set(0, 3, 4);
-        this._add(trigger); this.policeTrigger = trigger;
     }
 
-    _loadNpc(path, position, lookAt, type) {
+    _loadPatrolOfficer() {
+        // Keep the patrol outside the central carpet and away from door,
+        // concession, and arcade triggers. Crossings happen at quiet points.
+        const points = [
+            new THREE.Vector3(-5, 0, 18),
+            new THREE.Vector3(-5, 0, -20),
+            new THREE.Vector3(5, 0, -20),
+            new THREE.Vector3(5, 0, 7),
+            new THREE.Vector3(-5, 0, 7),
+        ];
+        const root = new THREE.Group();
+        root.position.copy(points[0]);
+        root.rotation.y = Math.PI;
+        this._add(root);
+
+        loadPatrolOfficer(root, walk => { this.policeWalk = walk; });
+
+        this.policePatrol = {
+            root,
+            points,
+            targetIndex: 1,
+            speed: 1.55,
+            turnSpeed: 5,
+        };
+    }
+
+    _loadNpc(path, position, lookAt) {
         new FBXLoader().load(path, fbx => {
             fbx.scale.setScalar(0.008333); fbx.position.set(...position); fbx.lookAt(...lookAt);
             fbx.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
@@ -216,10 +242,6 @@ export class BackHallScene {
                 if (clip) mixer.clipAction(clip).play();
                 this.mixers.push(mixer);
             }
-            if (type === 'police') {
-                const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.4, 0.16, 16), new THREE.MeshStandardMaterial({ color: 0x111c50 }));
-                cap.position.set(position[0], 2.12, position[2]); this._add(cap);
-            }
         });
     }
 
@@ -228,14 +250,38 @@ export class BackHallScene {
     }
 
     setupExitTrigger(callback) { Collision.addTrigger(this.exitTrigger, callback, 'backhall-lobby'); }
-    setupPoliceTrigger(callback) { Collision.addTrigger(this.policeTrigger, callback, 'backhall-police'); }
     setupConcessionTrigger(callback) { Collision.addTrigger(this.concessionTrigger, callback, 'backhall-concession'); }
     setupArcadeTriggers(callback) {
         this.arcadeTriggers.forEach(({ trigger, n }) => Collision.addTrigger(trigger, event => callback(event, n), `backhall-arcade-${n}`));
     }
     getSpawnPoint() { return { x: 0, y: 1, z: 25 }; }
     getCameraBounds() { return { minX: -11.2, maxX: 11.2, minY: 1.2, maxY: 11.2, minZ: -29.1, maxZ: 29.1 }; }
-    update(dt) { this.mixers.forEach(m => m.update(dt)); }
+    update(dt) {
+        this.mixers.forEach(m => m.update(dt));
+        this.policeWalk?.update(dt);
+        const patrol = this.policePatrol;
+        if (!patrol) return;
+
+        const target = patrol.points[patrol.targetIndex];
+        const offset = target.clone().sub(patrol.root.position);
+        const distance = offset.length();
+        if (distance < 0.12) {
+            patrol.root.position.copy(target);
+            patrol.targetIndex = (patrol.targetIndex + 1) % patrol.points.length;
+            return;
+        }
+
+        const direction = offset.multiplyScalar(1 / distance);
+        const step = Math.min(distance, patrol.speed * dt);
+        patrol.root.position.addScaledVector(direction, step);
+
+        const desiredYaw = Math.atan2(direction.x, direction.z);
+        const yawDelta = Math.atan2(
+            Math.sin(desiredYaw - patrol.root.rotation.y),
+            Math.cos(desiredYaw - patrol.root.rotation.y)
+        );
+        patrol.root.rotation.y += yawDelta * Math.min(1, patrol.turnSpeed * dt);
+    }
     dispose() {
         this.mixers.forEach(m => m.stopAllAction());
         this.objects.forEach(obj => {

@@ -8,15 +8,20 @@ import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { Settings } from '../settings.js';
 import { Input } from '../input.js';
 import { Collision } from './collision.js';
-import { Player } from './player.js';
-import { ExteriorScene } from './locations/exterior.js';
+import { Player } from './player.js?v=20261109-8';
+import { ExteriorScene } from './locations/exterior.js?v=20261112-13';
 import { LobbyScene } from './locations/lobby.js';
 import { TheaterRoomScene } from './locations/theaterRoom.js';
-import { LavaCaveScene } from './locations/lavaCaveScene.js';
-import { BackHallScene } from './locations/backHallScene.js';
-import { JailScene } from './locations/jailScene.js';
+import { LavaCaveScene } from './locations/lavaCaveScene.js?v=20261112-3';
+import { BackHallScene } from './locations/backHallScene.js?v=20261112-10';
+import { JailScene } from './locations/jailScene.js?v=20261109-4';
+import { JailEscapeScene } from './locations/jailEscapeScene.js?v=20261113-2';
+import { IRIS_QUESTS, IrisQuestLog } from './irisQuests.js?v=20261113-1';
 
 export class TheaterGame {
+    static GERALDS_CASH_BILL = 'ext-dumpster';
+    static GERALDS_CASH = 20;
+
     static ITEM_DEFS = {
         Pizza:     { emoji: '🍕', format: 'fbx', path: '../Pizza.fbx',                         scale: 0.002 },
         Soda:      { emoji: '🥤', format: 'fbx', path: '../Soda.fbx',                          scale: 0.002 },
@@ -27,6 +32,8 @@ export class TheaterGame {
                      mtl: '../Box of popcorn/materials.mtl',    scale: 0.03  },
         OldKey:    { emoji: '🗝️', format: null,  path: null,                                   scale: 1     },
         CriticPass:{ emoji: '🏅', format: null,  path: null,                                   scale: 1     },
+        Crowbar:   { emoji: '🛠️', format: null,  path: null,                                   scale: 1     },
+        IrisLens:  { emoji: '👁️', format: null,  path: null,                                   scale: 1     },
     };
 
     constructor() {
@@ -43,6 +50,11 @@ export class TheaterGame {
         Settings.add('scene', this.scene);
         Settings.add('camera', this.camera);
         Settings.add('cameraSensitivity', Number(localStorage.getItem('kai-camera-sensitivity')) || 1);
+        const savedSpeechVolume = localStorage.getItem('kai-speech-volume');
+        const parsedSpeechVolume = Number(savedSpeechVolume);
+        Settings.add('speechVolume', savedSpeechVolume !== null && Number.isFinite(parsedSpeechVolume)
+            ? THREE.MathUtils.clamp(parsedSpeechVolume, 0, 1)
+            : 1);
 
         // Create player
         this.player = new Player(this.scene);
@@ -50,13 +62,18 @@ export class TheaterGame {
         // Current location
         this.currentLocation = null;
         this.locationName = '';
+        this.jailEntryMode = 'detained';
 
         // UI
         this.setupUI();
         this.currency = 25;
         this.tickets = 0;
+        this.isCriminal = false;
         this.collectedBills = new Set();
+        this.crowbarCollected = false;
         this.metGerald = false;
+        // Gerald's dropped till money: null → 'carrying' → 'returned' | 'kept' | 'spent'
+        this.geraldsCash = null;
         this.strangerFed = false;  // true after player shares food with the lobby stranger
         this.activity = {
             conversations: new Set(),
@@ -66,6 +83,7 @@ export class TheaterGame {
             caveVisits: 0,
             bailPaid: 0,
         };
+        this.irisQuests = new IrisQuestLog();
         this.unlockedRewards = new Set();
         this.inventory = [];       // [{name: string, count: number}]
         this.equippedItem = null;
@@ -88,13 +106,19 @@ export class TheaterGame {
 
         // Dumpster animation state
         this.dumpsterAnim = null;
+        this.arrestAnim = null;
 
         // Local QA can deep-link to a room without weakening progression in
         // the published experience (for example: ?start=lobby).
         const previewParams = new URLSearchParams(window.location.search);
         const previewStart = previewParams.get('start');
-        const previewLocations = new Set(['exterior', 'lobby', 'backhall', 'lavacave', 'jail']);
+        const previewLocations = new Set(['exterior', 'lobby', 'backhall', 'lavacave', 'jail', 'jailescape']);
         const isLocalPreview = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+        if (isLocalPreview && previewParams.has('settings-preview')) {
+            document.getElementById('settings-panel').classList.add('open');
+            document.getElementById('settings-button').setAttribute('aria-expanded', 'true');
+        }
+        if (isLocalPreview && previewStart === 'jail') this.jailEntryMode = 'visitor';
         this.loadLocation(isLocalPreview && previewLocations.has(previewStart) ? previewStart : 'exterior');
         if (isLocalPreview && previewParams.has('x') && previewParams.has('z')) {
             const previewX = Number(previewParams.get('x'));
@@ -105,6 +129,22 @@ export class TheaterGame {
                 if (Number.isFinite(previewYaw)) this.player.cameraYaw = previewYaw;
                 this.cameraInitialized = false;
             }
+        }
+        if (isLocalPreview && previewParams.has('arrest-preview')) {
+            window.setTimeout(() => this._startArrestAnimation(), 700);
+        }
+        if (isLocalPreview && previewParams.has('criminal-preview')) {
+            this.isCriminal = true;
+            this._updateCriminalStatus();
+            window.setTimeout(() => this._showCriminalStatusPopup(), 250);
+        }
+        if (isLocalPreview && previewParams.has('crowbar-preview')) {
+            this.addToInventory('Crowbar');
+            this.selectedSlot = 2;
+            this._onSlotSelected();
+        }
+        if (isLocalPreview && previewParams.has('vent-open-preview')) {
+            window.setTimeout(() => this.currentLocation?.pryEscapeVent?.(), 900);
         }
 
         // Handle window resize
@@ -229,7 +269,68 @@ export class TheaterGame {
                     border-radius: 6px;
                     font-size: 12px;
                     line-height: 1.35;
+                    white-space: pre-line;
                 }
+                #player-status {
+                    display: none;
+                    position: absolute;
+                    top: 66px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    padding: 6px 11px;
+                    border: 1px solid rgba(255,72,96,0.8);
+                    border-radius: 999px;
+                    background: rgba(75,0,12,0.88);
+                    color: #ffb4c0;
+                    box-shadow: 0 0 18px rgba(255,35,70,0.25);
+                    font-size: 11px;
+                    font-weight: 800;
+                    letter-spacing: 0.08em;
+                }
+                #player-status.active { display: block; }
+                #arrest-cinematic {
+                    display: none;
+                    position: absolute;
+                    inset: 0;
+                    overflow: hidden;
+                    background: linear-gradient(90deg, rgba(255,28,55,0.08), transparent 42%, rgba(45,115,255,0.1));
+                    pointer-events: none;
+                }
+                #arrest-cinematic.active { display: block; }
+                #arrest-cinematic::before,
+                #arrest-cinematic::after {
+                    content: '';
+                    position: absolute;
+                    inset: 0;
+                    opacity: 0;
+                    mix-blend-mode: screen;
+                    animation: arrest-flash .46s steps(1) infinite;
+                }
+                #arrest-cinematic::before { background: radial-gradient(circle at 25% 35%, rgba(255,20,45,.46), transparent 45%); }
+                #arrest-cinematic::after {
+                    background: radial-gradient(circle at 75% 35%, rgba(35,110,255,.5), transparent 45%);
+                    animation-delay: .23s;
+                }
+                @keyframes arrest-flash { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+                #arrest-caption {
+                    position: absolute;
+                    left: 50%;
+                    bottom: 14%;
+                    transform: translateX(-50%);
+                    width: min(560px, calc(100vw - 48px));
+                    padding: 16px 22px;
+                    border: 1px solid rgba(255,255,255,.55);
+                    border-left: 5px solid #ff304f;
+                    border-right: 5px solid #3579ff;
+                    border-radius: 10px;
+                    background: rgba(2,5,14,.9);
+                    color: white;
+                    text-align: center;
+                    box-shadow: 0 0 35px rgba(30,80,255,.2);
+                    letter-spacing: .04em;
+                    font-weight: 800;
+                }
+                #arrest-caption strong { color: #ffd86b; font-size: 18px; }
                 #settings-button {
                     position: absolute;
                     top: 16px;
@@ -283,8 +384,8 @@ export class TheaterGame {
                     margin: 0;
                     color: rgba(255,255,255,0.76);
                 }
-                #camera-sensitivity { width: 100%; accent-color: #df3f8b; }
-                #sensitivity-value { color: #ffd700; font-weight: 700; }
+                #camera-sensitivity, #speech-volume { width: 100%; accent-color: #df3f8b; }
+                #sensitivity-value, #speech-volume-value { color: #ffd700; font-weight: 700; }
                 #hint {
                     position: absolute;
                     bottom: 20px;
@@ -524,6 +625,10 @@ export class TheaterGame {
             </div>
             <div id="location">📍 Loading...</div>
             <div id="objective">Objective: explore the cinema</div>
+            <div id="player-status" role="status">🚨 CRIMINAL</div>
+            <div id="arrest-cinematic" aria-live="polite">
+                <div id="arrest-caption"><strong>YOU ARE UNDER ARREST</strong><br><small>Officer Vale is transferring you to Holding 01</small></div>
+            </div>
             <button id="settings-button" type="button" aria-expanded="false" aria-controls="settings-panel">⚙ Settings</button>
             <div id="settings-panel">
                 <section class="settings-section" aria-labelledby="controls-heading">
@@ -544,6 +649,12 @@ export class TheaterGame {
                     <label for="camera-sensitivity">Sensitivity: <span id="sensitivity-value">1.00×</span></label>
                     <input id="camera-sensitivity" type="range" min="0.35" max="2.25" step="0.05" value="1">
                     <small style="opacity:.7">Lower is steadier; higher turns faster.</small>
+                </section>
+                <section class="settings-section" aria-labelledby="audio-heading">
+                    <h2 class="settings-heading" id="audio-heading">Audio</h2>
+                    <label for="speech-volume">Speech volume: <span id="speech-volume-value">100%</span></label>
+                    <input id="speech-volume" type="range" min="0" max="1" step="0.05" value="1">
+                    <small style="opacity:.7">Controls spoken dialogue only.</small>
                 </section>
             </div>
             <div id="hint"></div>
@@ -611,6 +722,8 @@ export class TheaterGame {
         this.uiElements = {
             location: document.getElementById('location'),
             objective: document.getElementById('objective'),
+            playerStatus: document.getElementById('player-status'),
+            arrestCinematic: document.getElementById('arrest-cinematic'),
             hint: document.getElementById('hint'),
             clickPrompt: document.getElementById('click-prompt'),
             inventoryBar: document.getElementById('inventory-bar'),
@@ -639,8 +752,12 @@ export class TheaterGame {
         });
         const sensitivityInput = document.getElementById('camera-sensitivity');
         const sensitivityValue = document.getElementById('sensitivity-value');
+        const speechVolumeInput = document.getElementById('speech-volume');
+        const speechVolumeValue = document.getElementById('speech-volume-value');
         sensitivityInput.value = String(Settings.get('cameraSensitivity') ?? 1);
         sensitivityValue.textContent = `${Number(sensitivityInput.value).toFixed(2)}×`;
+        speechVolumeInput.value = String(Settings.get('speechVolume') ?? 1);
+        speechVolumeValue.textContent = `${Math.round(Number(speechVolumeInput.value) * 100)}%`;
         document.getElementById('settings-button').addEventListener('click', event => {
             event.stopPropagation();
             document.exitPointerLock();
@@ -653,6 +770,12 @@ export class TheaterGame {
             Settings.add('cameraSensitivity', value);
             localStorage.setItem('kai-camera-sensitivity', String(value));
             sensitivityValue.textContent = `${value.toFixed(2)}×`;
+        });
+        speechVolumeInput.addEventListener('input', event => {
+            const value = THREE.MathUtils.clamp(Number(event.target.value), 0, 1);
+            Settings.add('speechVolume', value);
+            localStorage.setItem('kai-speech-volume', String(value));
+            speechVolumeValue.textContent = `${Math.round(value * 100)}%`;
         });
         window.addEventListener('keydown', (event) => {
             if (event.code === 'Escape' && this.gameOpen) {
@@ -688,16 +811,51 @@ export class TheaterGame {
 
     collectBill(id) {
         this.collectedBills.add(id);
+        // The pile by the dumpster is Gerald's till money, dropped while he
+        // took out the trash.
+        if (id === TheaterGame.GERALDS_CASH_BILL) {
+            this.currency += TheaterGame.GERALDS_CASH;
+            this.geraldsCash = 'carrying';
+            this.updateWalletUI();
+            this.updateObjectiveUI();
+            this.showHint(`Found an envelope stamped BOX OFFICE — GERALD. $${TheaterGame.GERALDS_CASH} inside. Return it at the ticket booth... or don't.`, 6000);
+            return;
+        }
         this.currency += 5;
         this.updateWalletUI();
         this.showHint('Found $5!', 2000);
     }
 
     die() {
+        this.irisQuests.notify('died');
         this.currency = Math.max(0, this.currency - 15);
+        this.isCriminal = false;
+        this.activity.unpaidMovies.clear();
+        this._updateCriminalStatus();
         this.updateWalletUI();
         this.showHint('You died! -$15', 2500);
         this.loadLocation('exterior');
+    }
+
+    _becomeCriminal(reason) {
+        this.isCriminal = true;
+        this._updateCriminalStatus();
+        this.showHint(`🚨 ${reason}`, 5000);
+    }
+
+    _updateCriminalStatus() {
+        this.uiElements.playerStatus.classList.toggle('active', this.isCriminal);
+    }
+
+    _showCriminalStatusPopup() {
+        this.openDialogue(
+            '🚨 Criminal Status',
+            'You are now labeled a criminal for entering a screening without a ticket. This status will remain until you respawn.',
+            [
+                { key: 'KeyE', label: '[E] Understood', action: () => this.closeDialogue() },
+                { key: 'Escape', label: '[Esc] Close', action: () => this.closeDialogue() },
+            ]
+        );
     }
 
     openDialogue(speaker, text, options) {
@@ -748,7 +906,8 @@ export class TheaterGame {
         const sinister = speaker.includes('Iris');
         utterance.rate = sinister ? 0.72 : 0.96;
         utterance.pitch = sinister ? 0.35 : 1.0;
-        utterance.volume = sinister ? 0.82 : 0.72;
+        const speechVolume = Settings.get('speechVolume') ?? 1;
+        utterance.volume = (sinister ? 0.82 : 0.72) * speechVolume;
         const voices = window.speechSynthesis.getVoices();
         const preferred = voices.find(v => sinister
             ? /daniel|fred|male|english.*uk/i.test(`${v.name} ${v.lang}`)
@@ -768,7 +927,20 @@ export class TheaterGame {
         this.cameraHeight = 2.5;
         this.cameraSmoothing = 0.05;
 
-        if (this.metGerald) {
+        if (this.geraldsCash === 'carrying') {
+            this._geraldLostEnvelope();
+        } else if (this.geraldsCash === 'kept' || this.geraldsCash === 'spent') {
+            this.openDialogue(
+                'Gerald',
+                this.geraldsCash === 'kept'
+                    ? '"You."\n\nHe doesn\'t look up. "Twenty dollars. That\'s what you think I\'m worth."\n\nHe slides the window open anyway.'
+                    : '"Still owe me twenty."\n\nHe slides the window open anyway.',
+                [
+                    { key: 'KeyE', label: '[E] I need a ticket',  action: () => this._ticketPurchaseMenu() },
+                    { key: 'Escape', label: '[Esc] Leave',        action: () => this.closeDialogue() },
+                ]
+            );
+        } else if (this.metGerald) {
             // Repeat visit — he remembers you
             this.openDialogue(
                 'Gerald',
@@ -790,6 +962,67 @@ export class TheaterGame {
                 ]
             );
         }
+    }
+
+    _geraldLostEnvelope() {
+        const cash = TheaterGame.GERALDS_CASH;
+        const canRepay = this.currency >= cash;
+        this.openDialogue(
+            'Gerald',
+            `Gerald is patting down every pocket he has.\n\n"You haven't seen an envelope, have you? Took the trash out and the till money went with it. $${cash}. If it's gone, it comes out of my pay."`,
+            [
+                canRepay
+                    ? { key: 'KeyE', label: `[E] Here. I found it by the dumpster.  (−$${cash})`, action: () => this._geraldCashReturned() }
+                    : { key: 'KeyE', label: '[E] I found it... but I spent some of it.', action: () => this._geraldCashSpent() },
+                { key: 'KeyQ', label: '[Q] Haven\'t seen it.', action: () => this._geraldCashDenied() },
+                { key: 'Escape', label: '[Esc] Say nothing', action: () => this.closeDialogue() },
+            ]
+        );
+    }
+
+    _geraldCashReturned() {
+        this.currency -= TheaterGame.GERALDS_CASH;
+        this.tickets += 2;
+        this.geraldsCash = 'returned';
+        this.metGerald = true;
+        this.updateWalletUI();
+        this.updateObjectiveUI();
+        this._transitionDialogue(
+            'Gerald',
+            'He counts it twice. Then a third time.\n\n"...All of it."\n\nHe slides two tickets under the glass. "On the house. Don\'t tell management. Don\'t tell the eye, either."\n\n+2 tickets',
+            [
+                { key: 'KeyE', label: '[E] Why not the eye?', action: () => this._transitionDialogue(
+                    'Gerald',
+                    '"Because it already knows. It just likes hearing people say it."',
+                    [{ key: 'Escape', label: '[Esc] Leave', action: () => this.closeDialogue() }]
+                ) },
+                { key: 'Escape', label: '[Esc] Thanks, Gerald', action: () => this.closeDialogue() },
+            ]
+        );
+    }
+
+    _geraldCashSpent() {
+        this.geraldsCash = 'spent';
+        this.metGerald = true;
+        this._transitionDialogue(
+            'Gerald',
+            '"Spent it."\n\nHe stares at you for a long time.\n\n"Well. At least you said so. That\'s more than most."',
+            [{ key: 'Escape', label: '[Esc] Leave', action: () => this.closeDialogue() }]
+        );
+    }
+
+    _geraldCashDenied() {
+        this.closeDialogue();
+        this._keepGeraldsCash('You lied to Gerald. The Iris watched you pick up that envelope, and it told Officer Vale.');
+    }
+
+    // Keeping the money (lying about it, or walking into the cinema with it)
+    // makes the visitor a criminal.
+    _keepGeraldsCash(reason) {
+        this.geraldsCash = 'kept';
+        this.metGerald = true;
+        this.updateObjectiveUI();
+        this._becomeCriminal(reason);
     }
 
     _geraldTenure() {
@@ -1171,7 +1404,17 @@ export class TheaterGame {
             people.length ? `You have spoken to ${people.join(', ')}.` : 'The staff still do not know your voice.',
             this.strangerFed ? 'You fed the one on the bench. He gave you the old key.' : 'The hungry one on the bench is still waiting.',
             this.activity.caveVisits ? `You survived the lava cave ${this.activity.caveVisits} time${this.activity.caveVisits === 1 ? '' : 's'}.` : 'You have not yet fallen beneath the street.',
-        ].join('\n');
+            this.geraldsCash === 'returned' ? 'You gave Gerald his envelope back. Honest. How dull.' : '',
+            this.geraldsCash === 'kept' ? 'You kept Gerald\'s envelope. I told them. I tell them everything.' : '',
+            this.geraldsCash === 'spent' ? 'You spent Gerald\'s money, then confessed. I have not decided what that makes you.' : '',
+            this.irisQuests.claimed.size ? `You have finished ${this.irisQuests.claimed.size} of my errands. You never asked why.` : '',
+        ].filter(Boolean).join('\n');
+        const quests = this.irisQuests;
+        const taskLabel = quests.active?.complete
+            ? '[R] It is done.'
+            : quests.active
+                ? '[R] About your errand...'
+                : '[R] Do you have something for me?';
 
         this.openDialogue(
             '◉ The Iris',
@@ -1179,6 +1422,7 @@ export class TheaterGame {
             [
                 { key: 'KeyE', label: '[E] What are your sinister activities?', action: () => this._irisSecret() },
                 { key: 'KeyQ', label: '[Q] What should I do next?', action: () => this._irisNext() },
+                { key: 'KeyR', label: taskLabel, action: () => this._irisQuestTalk() },
                 { key: 'Escape', label: '[Esc] Break eye contact', action: () => this.closeDialogue() },
             ]
         );
@@ -1205,6 +1449,99 @@ export class TheaterGame {
             `"${next}"`,
             [{ key: 'Escape', label: '[Esc] Leave', action: () => this.closeDialogue() }]
         );
+    }
+
+    // The Iris's errands (see irisQuests.js). One is active at a time; the
+    // reward is collected by coming back to the fountain.
+    _irisQuestTalk() {
+        const quests = this.irisQuests;
+        const leave = { key: 'Escape', label: '[Esc] Leave', action: () => this.closeDialogue() };
+
+        if (quests.active?.complete) {
+            const quest = quests.claim();
+            const { money = 0, item = null } = quest.reward;
+            this.currency += money;
+            if (item) this.addToInventory(item);
+            this.updateWalletUI();
+            this.updateObjectiveUI();
+            const paid = [money ? `+$${money}` : '', item ? `${TheaterGame.ITEM_DEFS[item]?.emoji ?? ''} ${item}` : ''].filter(Boolean).join('  ');
+            const more = quests.nextOffer() ? '\n\nI have something else for you.' : '';
+            this._transitionDialogue('◉ The Iris', `"${quest.done}"${more}\n\nReward: ${paid}`, [
+                ...(quests.nextOffer() ? [{ key: 'KeyR', label: '[R] What is it?', action: () => this._irisQuestTalk() }] : []),
+                leave,
+            ]);
+            return;
+        }
+
+        if (quests.active) {
+            const quest = IRIS_QUESTS[quests.active.id];
+            const status = quest.event && !quests.progress(this) && quest.waiting
+                ? quest.waiting
+                : `${quest.objective} (${quests.progress(this)}/${quest.need})\n\nI am still watching.`;
+            this._transitionDialogue('◉ The Iris', `"${status}"`, [
+                { key: 'KeyX', label: '[X] Give me a different errand.', action: () => this._irisQuestGiveUp() },
+                leave,
+            ]);
+            return;
+        }
+
+        const offer = quests.nextOffer();
+        if (!offer) {
+            this._transitionDialogue('◉ The Iris', '"Nothing. Not yet. Come back when the building has changed."', [leave]);
+            return;
+        }
+        const quest = IRIS_QUESTS[offer];
+        this._transitionDialogue('◉ The Iris', `"${quest.ask}"\n\nErrand: ${quest.title}`, [
+            { key: 'KeyE', label: '[E] I will do it.', action: () => this._irisQuestAccept(offer) },
+            { key: 'KeyQ', label: '[Q] Why?', action: () => this._irisQuestWhy(offer) },
+            { key: 'Escape', label: '[Esc] Not now.', action: () => this.closeDialogue() },
+        ]);
+    }
+
+    _irisQuestWhy(id) {
+        const answers = [
+            'Because I asked.',
+            'You would not understand the answer. You would only repeat it.',
+            'The building wants it. I want it more.',
+            'Ask me again after. You will not want to.',
+        ];
+        const answer = answers[(this.irisQuests.claimed.size + IRIS_QUESTS[id].title.length) % answers.length];
+        this._transitionDialogue('◉ The Iris', `"${answer}"`, [
+            { key: 'KeyE', label: '[E] Fine. I will do it.', action: () => this._irisQuestAccept(id) },
+            { key: 'Escape', label: '[Esc] Not now.', action: () => this.closeDialogue() },
+        ]);
+    }
+
+    _irisQuestAccept(id) {
+        this.irisQuests.accept(id, this);
+        this.updateObjectiveUI();
+        const quest = IRIS_QUESTS[id];
+        if (this.irisQuests.active.complete) {
+            this._transitionDialogue('◉ The Iris', '"You have already done it. I watched you do it."', [
+                { key: 'KeyR', label: '[R] Then pay me.', action: () => this._irisQuestTalk() },
+            ]);
+            return;
+        }
+        this._transitionDialogue('◉ The Iris', `"${quest.waiting ?? 'Go. I will know when it is done.'}"`, [
+            { key: 'Escape', label: '[Esc] Leave', action: () => this.closeDialogue() },
+        ]);
+    }
+
+    _irisQuestGiveUp() {
+        this.irisQuests.giveUp();
+        this.updateObjectiveUI();
+        this._irisQuestTalk();
+    }
+
+    _checkIrisQuests() {
+        const finished = this.irisQuests.check(this);
+        if (finished) this.showHint(`◉ The Iris blinks. "${finished.title}" is done. Return to the fountain.`, 4500);
+        const active = this.irisQuests.active;
+        const shown = active ? `${active.id}:${this.irisQuests.progress(this)}:${active.complete}` : '';
+        if (shown !== this._irisShownErrand) {
+            this._irisShownErrand = shown;
+            this.updateObjectiveUI();
+        }
     }
 
     _openPoliceConversation() {
@@ -1247,6 +1584,147 @@ export class TheaterGame {
 
     _sendToJail() {
         this.closeDialogue();
+        this.jailEntryMode = 'detained';
+        this._startArrestAnimation();
+    }
+
+    _buildPoliceCar() {
+        const car = new THREE.Group();
+        const black = new THREE.MeshStandardMaterial({ color: 0x080b11, metalness: 0.72, roughness: 0.28 });
+        const white = new THREE.MeshStandardMaterial({ color: 0xe8edf3, metalness: 0.45, roughness: 0.3 });
+        const glass = new THREE.MeshStandardMaterial({ color: 0x18324d, metalness: 0.55, roughness: 0.16 });
+        const red = new THREE.MeshStandardMaterial({ color: 0xff1838, emissive: 0xff1838, emissiveIntensity: 4 });
+        const blue = new THREE.MeshStandardMaterial({ color: 0x2875ff, emissive: 0x2875ff, emissiveIntensity: 4 });
+
+        const body = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.72, 4.8), black);
+        body.position.y = 0.72;
+        car.add(body);
+        const doors = new THREE.Mesh(new THREE.BoxGeometry(2.54, 0.58, 2.15), white);
+        doors.position.set(0, 0.9, -0.15);
+        car.add(doors);
+        const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.82, 2.55), glass);
+        cabin.position.set(0, 1.48, -0.2);
+        car.add(cabin);
+        for (const x of [-1.18, 1.18]) {
+            for (const z of [-1.55, 1.55]) {
+                const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.24, 18), black);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.position.set(x, 0.42, z);
+                car.add(wheel);
+            }
+        }
+        const lightBase = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.11, 0.38), black);
+        lightBase.position.set(0, 2, -0.15);
+        car.add(lightBase);
+        const redLens = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.22, 0.34), red);
+        redLens.position.set(-0.42, 2.13, -0.15);
+        car.add(redLens);
+        const blueLens = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.22, 0.34), blue);
+        blueLens.position.set(0.42, 2.13, -0.15);
+        car.add(blueLens);
+        const redLight = new THREE.PointLight(0xff1838, 0, 14);
+        redLight.position.copy(redLens.position).add(new THREE.Vector3(-0.2, 0.15, 0.5));
+        car.add(redLight);
+        const blueLight = new THREE.PointLight(0x2875ff, 0, 14);
+        blueLight.position.copy(blueLens.position).add(new THREE.Vector3(0.2, 0.15, 0.5));
+        car.add(blueLight);
+        car.traverse(child => { if (child.isMesh) child.castShadow = true; });
+        car.userData.arrestLights = { red, blue, redLight, blueLight };
+        return car;
+    }
+
+    _startArrestSiren() {
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) return null;
+            const context = new AudioContextClass();
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            oscillator.type = 'sawtooth';
+            oscillator.frequency.value = 720;
+            gain.gain.value = 0.035;
+            oscillator.connect(gain).connect(context.destination);
+            oscillator.start();
+            context.resume?.();
+            return { context, oscillator, gain };
+        } catch (error) {
+            console.warn('Unable to start arrest siren.', error);
+            return null;
+        }
+    }
+
+    _startArrestAnimation() {
+        if (this.arrestAnim) return;
+        this.closeDialogue();
+        this.jailEntryMode = 'detained';
+        this.player.setHandcuffed(true);
+        this.player.velocity.set(0, 0, 0);
+
+        const forward = new THREE.Vector3(Math.sin(this.player.cameraYaw), 0, Math.cos(this.player.cameraYaw));
+        const right = new THREE.Vector3(Math.cos(this.player.cameraYaw), 0, -Math.sin(this.player.cameraYaw));
+        const car = this._buildPoliceCar();
+        car.position.copy(this.player.mesh.position).addScaledVector(right, 3.2).addScaledVector(forward, 1.5);
+        car.rotation.y = this.player.cameraYaw;
+        this.scene.add(car);
+
+        this.uiElements.arrestCinematic.classList.add('active');
+        this.uiElements.clickPrompt.classList.add('hidden');
+        this.showHint('Hands behind your back.', 3000);
+        this.arrestAnim = {
+            elapsed: 0,
+            duration: 3.6,
+            car,
+            forward,
+            right,
+            siren: this._startArrestSiren(),
+            previousSmoothing: this.cameraSmoothing,
+        };
+    }
+
+    _updateArrestAnimation(dt) {
+        const anim = this.arrestAnim;
+        anim.elapsed += dt;
+        // Advance the mixer's cross-fade into the held clapping frame, which
+        // brings both wrists together for the cuff pose.
+        this.player.mixer?.update(dt);
+        const lights = anim.car.userData.arrestLights;
+        const redOn = Math.floor(anim.elapsed / 0.22) % 2 === 0;
+        lights.red.emissiveIntensity = redOn ? 7 : 0.35;
+        lights.blue.emissiveIntensity = redOn ? 0.35 : 7;
+        lights.redLight.intensity = redOn ? 9 : 0;
+        lights.blueLight.intensity = redOn ? 0 : 9;
+        if (anim.siren) {
+            anim.siren.oscillator.frequency.setTargetAtTime(redOn ? 920 : 650, anim.siren.context.currentTime, 0.06);
+        }
+
+        const focus = this.player.mesh.position.clone().add(anim.car.position).multiplyScalar(0.5);
+        const cameraPos = this.player.mesh.position.clone()
+            .addScaledVector(anim.forward, 6.4)
+            .addScaledVector(anim.right, -2.3)
+            .add(new THREE.Vector3(0, 3.1, 0));
+        this.camera.position.lerp(cameraPos, 1 - Math.exp(-dt * 6));
+        this.camera.lookAt(focus.add(new THREE.Vector3(0, 1.05, 0)));
+
+        if (anim.elapsed >= anim.duration) this._finishArrestAnimation();
+    }
+
+    _finishArrestAnimation() {
+        const anim = this.arrestAnim;
+        if (!anim) return;
+        try {
+            anim.siren?.oscillator.stop();
+            anim.siren?.context.close();
+        } catch (_) {}
+        this.scene.remove(anim.car);
+        anim.car.traverse(child => {
+            child.geometry?.dispose?.();
+            child.material?.dispose?.();
+        });
+        this.player.setHandcuffed(false);
+        this.uiElements.arrestCinematic.classList.remove('active');
+        this.cameraSmoothing = anim.previousSmoothing;
+        this.cameraInitialized = false;
+        this.arrestAnim = null;
         this.loadLocation('jail');
     }
 
@@ -1449,7 +1927,14 @@ export class TheaterGame {
             objective = 'Critic Pass unlocked. Ask The Iris what it has witnessed.';
         }
         if (this.activity.unpaidMovies.size) objective = 'Security alert: settle your unpaid admission or face the holding cell.';
-        this.uiElements.objective.textContent = `Objective: ${objective}`;
+        if (this.geraldsCash === 'carrying') objective = 'You are carrying Gerald\'s till money. Return it at the ticket booth, or walk away with it.';
+        const errand = this.irisQuests.active;
+        const errandLine = !errand
+            ? ''
+            : errand.complete
+                ? `\n◉ The Iris: return to the fountain.`
+                : `\n◉ The Iris: ${IRIS_QUESTS[errand.id].objective} (${this.irisQuests.progress(this)}/${IRIS_QUESTS[errand.id].need})`;
+        this.uiElements.objective.textContent = `Objective: ${objective}${errandLine}`;
     }
 
     _queueLocation(name) {
@@ -1462,11 +1947,34 @@ export class TheaterGame {
             this.tickets--;
             this.activity.moviesAttended.add(theater);
             this.updateWalletUI();
-        } else {
-            this.activity.unpaidMovies.add(theater);
-            this.updateObjectiveUI();
+            this._queueLocation(theater);
+            return;
         }
-        this._queueLocation(theater);
+        this._openUnticketedEntryWarning(number);
+    }
+
+    _openUnticketedEntryWarning(number) {
+        if (this.dialogueOpen) return;
+        const theater = `theater${number}`;
+        this.openDialogue(
+            '⚠ Ticket Required',
+            `You do not have a ticket for Screen ${number}.\n\nEntering anyway will mark you as a criminal until you respawn. Continue?`,
+            [
+                {
+                    key: 'KeyE',
+                    label: '[E] Enter without a ticket',
+                    action: () => {
+                        const newlyCriminal = !this.isCriminal;
+                        this.isCriminal = true;
+                        this._updateCriminalStatus();
+                        this.closeDialogue();
+                        this.loadLocation(theater);
+                        if (newlyCriminal) this._showCriminalStatusPopup();
+                    },
+                },
+                { key: 'Escape', label: '[Esc] Back away', action: () => this.closeDialogue() },
+            ]
+        );
     }
 
     loadLocation(name) {
@@ -1525,9 +2033,20 @@ export class TheaterGame {
                     if (event === 'enter') {
                         this.showHint('Entrance doors opening...', 1500);
                         this.nearDoor = true;
+                        if (this.geraldsCash === 'carrying') {
+                            this._keepGeraldsCash('You walked off with Gerald\'s till money. Behind you, Gerald starts shouting. The Iris has already told Officer Vale.');
+                        }
                         this._queueLocation('lobby');
                     } else {
                         this.nearDoor = false;
+                    }
+                });
+
+                this.currentLocation.setupJailPortalTrigger((event) => {
+                    if (event === 'enter') {
+                        this.jailEntryMode = 'visitor';
+                        this.showHint('Security portal engaged • transporting to Holding 01...', 1800);
+                        this._queueLocation('jail');
                     }
                 });
 
@@ -1562,6 +2081,11 @@ export class TheaterGame {
                 const spawn = this.currentLocation.getSpawnPoint();
                 this.player.setPosition(spawn.x, spawn.y, spawn.z);
                 this.player.cameraYaw = Math.PI; // Face the theater
+                // Start low and tilted upward so the first view presents the
+                // marquee and roofline rather than looking down at the road.
+                this.player.cameraPitch = -0.25;
+                this.cameraHeight = 2.8;
+                this.cameraInitialized = false;
                 this.player.floorY = -Infinity; // Allow falling off the road
 
                 this.setLocationUI('Outside Theater');
@@ -1682,6 +2206,11 @@ export class TheaterGame {
                 this.currentLocation = new LavaCaveScene(this.scene);
                 this.currentLocation.build();
                 this.currentLocation.setupMoneyPickups(this.collectedBills, (id) => this.collectBill(id));
+                this.currentLocation.setupCrowbarPickup(this.crowbarCollected, () => {
+                    this.crowbarCollected = true;
+                    this.addToInventory('Crowbar');
+                    this.showHint('Found a crowbar. The bolted vent in Holding 01 is no longer impossible.', 5000);
+                });
                 this.currentLocation.setupExitTrigger((event) => {
                     if (event === 'enter') {
                         this.showHint('Cave exit opening...', 1500);
@@ -1722,15 +2251,16 @@ export class TheaterGame {
                 this.currentLocation.setupTheaterTriggers((event, n, title) => {
                     if (event === 'enter') {
                         this.nearHallTheater = n;
-                        this.showHint(`Screen ${n}: ${title} — doors opening...`, 1500);
+                        this.showHint(
+                            this.tickets > 0
+                                ? `Screen ${n}: ${title} — doors opening...`
+                                : `Screen ${n}: ${title} — ticket required`,
+                            1500
+                        );
                         this._queueTheaterEntry(n);
                     } else if (this.nearHallTheater === n) {
                         this.nearHallTheater = 0;
                     }
-                });
-                this.currentLocation.setupPoliceTrigger(event => {
-                    this.nearPolice = event === 'enter';
-                    if (this.nearPolice) this.showHint('Right-click to speak with Cinema Security', 4000);
                 });
                 this.currentLocation.setupConcessionTrigger(event => {
                     this.nearConcession = event === 'enter';
@@ -1760,7 +2290,9 @@ export class TheaterGame {
                 break;
 
             case 'jail':
-                this.currentLocation = new JailScene(this.scene);
+                this.currentLocation = new JailScene(this.scene, {
+                    allowVisitorReturn: this.jailEntryMode === 'visitor',
+                });
                 this.currentLocation.build();
                 this.currentLocation.setupBailTrigger(event => {
                     this.nearJailBail = event === 'enter';
@@ -1768,7 +2300,22 @@ export class TheaterGame {
                 });
                 this.currentLocation.setupEscapeTrigger(event => {
                     this.nearJailEscape = event === 'enter';
-                    if (this.nearJailEscape) this.showHint('Press SPACE to crawl through the escape vent', 5000);
+                    if (this.nearJailEscape) {
+                        const hasCrowbar = this.inventory.some(item => item.name === 'Crowbar');
+                        this.showHint(
+                            hasCrowbar
+                                ? 'Select the crowbar and press U to pry open the vent'
+                                : 'The vent is bolted shut • find a crowbar, or force it with a double-jump',
+                            6000
+                        );
+                    }
+                });
+                this.currentLocation.setupReturnTrigger(event => {
+                    if (event === 'enter') {
+                        this.jailEntryMode = 'detained';
+                        this.showHint('Visitor return portal engaged...', 1200);
+                        this._queueLocation('exterior');
+                    }
                 });
                 {
                     const jailSpawn = this.currentLocation.getSpawnPoint();
@@ -1777,7 +2324,32 @@ export class TheaterGame {
                 this.player.cameraYaw = Math.PI;
                 this.cameraInitialized = false;
                 this.setLocationUI('Cinema Security Holding Cell');
-                this.showHint('Pay bail or double-jump to the raised escape vent.', 6000);
+                this.showHint('Pay bail, or find a way through the bolted maintenance vent.', 6000);
+                break;
+
+            case 'jailescape':
+                this.currentLocation = new JailEscapeScene(this.scene);
+                this.currentLocation.build();
+                this.currentLocation.setupExitTrigger(event => {
+                    if (event !== 'enter') return;
+                    this.activity.unpaidMovies.clear();
+                    this.isCriminal = false;
+                    this._updateCriminalStatus();
+                    this.jailEntryMode = 'detained';
+                    this.irisQuests.notify('escapedJail');
+                    this.showHint('Street hatch opened • you escaped Holding 01.', 1800);
+                    this._queueLocation('exterior');
+                });
+                {
+                    const escapeSpawn = this.currentLocation.getSpawnPoint();
+                    this.player.setPosition(escapeSpawn.x, escapeSpawn.y, escapeSpawn.z);
+                }
+                this.player.floorY = -Infinity;
+                this.player.cameraYaw = Math.PI;
+                this.player.mesh.rotation.y = Math.PI;
+                this.cameraInitialized = false;
+                this.setLocationUI('Holding 01 • Maintenance Duct');
+                this.showHint('Follow the maintenance route to the green street-access ladder.', 6000);
                 break;
 
             case 'theater4':
@@ -2008,6 +2580,13 @@ export class TheaterGame {
     }
 
     update(dt) {
+        // Arrest cinematic freezes normal movement until transport completes.
+        if (this.arrestAnim !== null) {
+            this._updateArrestAnimation(dt);
+            if (this.currentLocation?.update) this.currentLocation.update(dt, this.player.getPosition());
+            return;
+        }
+
         // Dumpster cinematic — skip all normal physics/input
         if (this.dumpsterAnim !== null) {
             this._updateDumpsterAnim(dt);
@@ -2054,6 +2633,7 @@ export class TheaterGame {
             }
             if (Input.isKeyJustPressed('KeyE')) this.standUp();
             if (Input.isKeyJustPressed('Space')) this.launchGame();
+            this._checkIrisQuests();
             return;
         }
 
@@ -2142,10 +2722,7 @@ export class TheaterGame {
         if (this.nearEye && npcTalkRequested) {
             this._openIrisConversation();
         }
-
-        if (this.nearPolice && npcTalkRequested) {
-            this._openPoliceConversation();
-        }
+        this._checkIrisQuests();
 
         // Back door
         if (this.nearBackDoor && Input.isKeyJustPressed('KeyE')) {
@@ -2156,19 +2733,26 @@ export class TheaterGame {
             this.loadLocation('lobby');
         }
 
-        // Guests may sneak into a screening without a ticket, but The Iris
-        // records it and Officer Vale enforces the consequence in the hall.
-        if (this.nearHallTheater && Input.isKeyJustPressed('KeyE') && this.tickets === 0) {
-            const theater = `theater${this.nearHallTheater}`;
-            this.activity.unpaidMovies.add(theater);
-            this.updateObjectiveUI();
-            this.loadLocation(theater);
+        if (this.nearJailEscape && this.player.getPosition().y > 3.2 && Input.isKeyJustPressed('Space')) {
+            this.loadLocation('jailescape');
+            this.showHint('You forced your way into the maintenance duct.', 4000);
         }
 
-        if (this.nearJailEscape && Input.isKeyJustPressed('Space')) {
-            this.activity.unpaidMovies.clear();
-            this.loadLocation('exterior');
-            this.showHint('You escaped through the vent. The Iris saw that too.', 5000);
+        if (this.nearJailEscape && Input.isKeyJustPressed('KeyU')) {
+            const hasCrowbar = this.inventory.some(item => item.name === 'Crowbar');
+            if (hasCrowbar && this.equippedItem === 'Crowbar') {
+                this.currentLocation?.pryEscapeVent?.();
+                this.showHint('The crowbar tears the grate loose...', 1800);
+                window.setTimeout(() => {
+                    if (this.locationName !== 'jail') return;
+                    this.loadLocation('jailescape');
+                    this.showHint('The grate gives way. Find the street-access hatch.', 5000);
+                }, 1450);
+            } else if (hasCrowbar) {
+                this.showHint('Select the 🛠️ crowbar in your inventory first.', 3000);
+            } else {
+                this.showHint('The grate will not move. You need a crowbar.', 3000);
+            }
         }
 
         if (this.nearJailBail && Input.isKeyJustPressed('KeyU') && this.selectedSlot === 0) {
@@ -2176,6 +2760,7 @@ export class TheaterGame {
                 this.currency -= 10;
                 this.activity.bailPaid += 10;
                 this.activity.unpaidMovies.clear();
+                this.jailEntryMode = 'detained';
                 this.updateWalletUI();
                 this.loadLocation('lobby');
                 return;
@@ -2190,6 +2775,13 @@ export class TheaterGame {
         }
         if (this.locationName === 'exterior' && pos.y < -10) {
             this.die();
+        }
+        if (this.locationName === 'jailescape' && pos.y < -3.3) {
+            const escapeSpawn = this.currentLocation.getSpawnPoint();
+            this.player.setPosition(escapeSpawn.x, escapeSpawn.y, escapeSpawn.z);
+            this.player.velocity.set(0, 0, 0);
+            this.cameraInitialized = false;
+            this.showHint('The electrified runoff forced you back to the vent entrance.', 3200);
         }
 
         // Check for lobby exit (space near exit)
@@ -2397,6 +2989,7 @@ export class TheaterGame {
 
     _openArcadeGame(n) {
         if (this.currency < 5) { this.showHint('Not enough money to play!', 2500); return; }
+        this.irisQuests.notify('arcadePlayed');
         document.exitPointerLock();
         this.uiElements.clickPrompt.classList.add('hidden');
         this.arcadeOpen = true;

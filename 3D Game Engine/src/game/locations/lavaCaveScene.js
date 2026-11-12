@@ -13,6 +13,9 @@ export class LavaCaveScene {
         this.portalMesh = null;
         this.exitTrigger = null;
         this.portalTrigger = null;
+        this.crowbarGroup = null;
+        this.crowbarGlow = null;
+        this.crowbarTrigger = null;
     }
 
     build() {
@@ -20,6 +23,7 @@ export class LavaCaveScene {
         this.buildLava();
         this.buildPlatform();
         this.buildParkourRocks();
+        this.buildCrowbarPickup();
         this.buildDestinationPlatform();
         this.buildPortal();
         this.buildWalls();
@@ -104,6 +108,9 @@ export class LavaCaveScene {
             { pos: [1.5,  -0.5, -16], size: [3,   1,   3  ] }, // Rock 5 — longest gap
             { pos: [-1,    0,   -21], size: [3,   1,   3  ] }, // Rock 6
             { pos: [1,    -0.25, -27], size: [4,   0.5, 4  ] }, // Rock 7 — wider, signals end near
+            // A deliberately optional ledge. It is just off Rock 4's left side,
+            // so players can detour for the crowbar without blocking the route.
+            { pos: [-4.8,   0.1, -11.3], size: [2.3, 0.7, 2.5] },
         ];
 
         rocks.forEach(({ pos, size }) => {
@@ -113,6 +120,54 @@ export class LavaCaveScene {
             this.objects.push(mesh);
             Collision.addCollider(mesh);
         });
+    }
+
+    buildCrowbarPickup() {
+        // Resting on the optional ledge beside Rock 4, away from the main
+        // parkour line. Reaching it takes a conscious side jump.
+        const x = -4.8;
+        const y = 0.62;
+        const z = -11.3;
+        const group = new THREE.Group();
+        const metal = new THREE.MeshStandardMaterial({
+            color: 0xe1f6ff,
+            metalness: 0.92,
+            roughness: 0.18,
+            emissive: 0x2a5d72,
+            emissiveIntensity: 0.7,
+        });
+        const accent = new THREE.MeshStandardMaterial({ color: 0x215e7a, emissive: 0x0b2737, emissiveIntensity: 0.45, roughness: 0.38, metalness: 0.5 });
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 2.05, 10), metal);
+        shaft.position.y = 0.92;
+        shaft.castShadow = true;
+        group.add(shaft);
+        const hook = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.065, 8, 16, Math.PI * 1.35), metal);
+        hook.rotation.set(Math.PI / 2, 0, Math.PI * 0.15);
+        hook.position.set(0.08, 1.92, 0);
+        hook.castShadow = true;
+        group.add(hook);
+        const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.48, 10), accent);
+        grip.position.y = 0.32;
+        grip.castShadow = true;
+        group.add(grip);
+        group.position.set(x, y, z);
+        group.rotation.set(0.05, -0.35, -0.28);
+        this.scene.add(group);
+        this.objects.push(group);
+        this.crowbarGroup = group;
+
+        const glow = new THREE.PointLight(0x78dcff, 2.4, 6.5);
+        glow.position.set(x, y + 1.05, z);
+        this.scene.add(glow);
+        this.lights.push(glow);
+        this.crowbarGlow = glow;
+
+        const trigger = new THREE.Mesh(new THREE.BoxGeometry(2.1, 2.8, 2.1));
+        trigger.visible = false;
+        trigger.position.set(x, y + 0.9, z);
+        this.scene.add(trigger);
+        this.objects.push(trigger);
+        this.crowbarTrigger = trigger;
     }
 
     buildDestinationPlatform() {
@@ -192,18 +247,22 @@ export class LavaCaveScene {
         this.portalMesh = fill; // tracked for pulsing
 
         const canvas = document.createElement('canvas');
-        canvas.width = 512; canvas.height = 128;
+        canvas.width = 768; canvas.height = 180;
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#160817'; ctx.fillRect(0, 0, 512, 128);
-        ctx.strokeStyle = '#b98a3c'; ctx.lineWidth = 10; ctx.strokeRect(6, 6, 500, 116);
-        ctx.fillStyle = '#f4d68c'; ctx.font = 'bold 42px serif';
+        ctx.fillStyle = '#160817'; ctx.fillRect(0, 0, 768, 180);
+        ctx.strokeStyle = '#b98a3c'; ctx.lineWidth = 10; ctx.strokeRect(6, 6, 756, 168);
+        ctx.fillStyle = '#f4d68c'; ctx.font = 'bold 52px serif';
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('THE DESCENT • PLAY IF YOU DARE', 256, 64);
+        ctx.fillText('THE DESCENT', 384, 56);
+        ctx.font = 'bold 43px serif';
+        ctx.fillText('PLAY IF YOU DARE', 384, 126);
+        const signTexture = new THREE.CanvasTexture(canvas);
+        signTexture.colorSpace = THREE.SRGBColorSpace;
         const sign = new THREE.Mesh(
-            new THREE.BoxGeometry(5.4, 1.05, 0.28),
-            new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas) })
+            new THREE.BoxGeometry(5.8, 1.35, 0.28),
+            new THREE.MeshBasicMaterial({ map: signTexture, toneMapped: false })
         );
-        sign.position.set(0, 7.3, -35.62);
+        sign.position.set(0, 7.4, -35.62);
         this.scene.add(sign); this.objects.push(sign);
 
         const handle = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), brassMat);
@@ -358,6 +417,24 @@ export class LavaCaveScene {
                 }, stack.id);
             }
         }
+    }
+
+    setupCrowbarPickup(alreadyCollected, onCollect) {
+        if (!this.crowbarGroup || !this.crowbarTrigger) return;
+        if (alreadyCollected) {
+            this.scene.remove(this.crowbarGroup);
+            this.scene.remove(this.crowbarGlow);
+            this.scene.remove(this.crowbarTrigger);
+            return;
+        }
+        Collision.addTrigger(this.crowbarTrigger, event => {
+            if (event !== 'enter') return;
+            this.scene.remove(this.crowbarGroup);
+            this.scene.remove(this.crowbarGlow);
+            this.scene.remove(this.crowbarTrigger);
+            Collision.removeTrigger('cave-crowbar');
+            onCollect();
+        }, 'cave-crowbar');
     }
 
     setupExitTrigger(callback) {

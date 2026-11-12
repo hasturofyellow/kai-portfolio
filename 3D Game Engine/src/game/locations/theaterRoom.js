@@ -39,6 +39,7 @@ export class TheaterRoomScene {
         this.buildSeats();
         this.buildExitDoor();
         this.buildNeonDecorations();
+        this.buildHouseRulesSign();
     }
 
     setupLighting() {
@@ -567,6 +568,34 @@ export class TheaterRoomScene {
             this.scene.add(ring);
             this.objects.push(ring);
         });
+    }
+
+    buildHouseRulesSign() {
+        // One-line house rules sign on the left wall near the entrance
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#030312';
+        ctx.fillRect(0, 0, 1024, 128);
+        ctx.strokeStyle = '#df3f8b';
+        ctx.lineWidth = 6;
+        ctx.strokeRect(6, 6, 1012, 116);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 48px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Tickets at all times — security is watching.', 512, 64);
+
+        const sign = new THREE.Mesh(
+            new THREE.PlaneGeometry(7, 0.875),
+            new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas) })
+        );
+        // Face into the room from the left wall
+        sign.rotation.y = Math.PI / 2;
+        sign.position.set(-14.6, 4.5, 20);
+        this.scene.add(sign);
+        this.objects.push(sign);
     }
 
     buildWallSconces() {
