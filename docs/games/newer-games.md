@@ -69,3 +69,9 @@ Mobile-first puzzle game that uses device sensors. Installable as a PWA.
 **Design:** Monochrome dark theme (`#0d0d0d` background, `#d0d0d0` text). No color accents — purely typographic/symbolic. Title displayed as "NULL".
 
 **Note:** Requires a real mobile device with sensors (or browser DevTools sensor simulation) — does not work on desktop.
+
+---
+
+## Cinema Hangout (`Cinema Hangout/`)
+
+2D alternative to the Three.js cinema: flat cartoon rooms with click-to-walk, chat bubbles, a gift shop, a decoratable room and the full Iris quest chain. Canvas 2D in one `index.html`, no dependencies. Serve the repo root and open `Cinema Hangout/` (the theater screens load `../snakeGame.html` and the other games). Full notes in `Cinema Hangout/CLAUDE.md`.
