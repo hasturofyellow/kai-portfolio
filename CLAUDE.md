@@ -20,6 +20,7 @@ kai-portfolio/
 ├── stick/              — Stick Soccer
 ├── 3D Game Engine/     — Three.js cinema portfolio (own CLAUDE.md)
 ├── Cinema Hangout/     — 2D room-based version of the cinema (own CLAUDE.md)
+├── Cinema Text/        — Text-adventure version of the cinema (own CLAUDE.md)
 ├── God game/           — 3D Babylon.js game
 ├── sensor-puzzle/      — Mobile PWA sensor puzzle (own CLAUDE.md)
 └── docs/               — Extended documentation (imported below)

@@ -75,3 +75,9 @@ Mobile-first puzzle game that uses device sensors. Installable as a PWA.
 ## Cinema Hangout (`Cinema Hangout/`)
 
 2D alternative to the Three.js cinema: flat cartoon rooms with click-to-walk, chat bubbles, a gift shop, a decoratable room and the full Iris quest chain. Canvas 2D in one `index.html`, no dependencies. Serve the repo root and open `Cinema Hangout/` (the theater screens load `../snakeGame.html` and the other games). Full notes in `Cinema Hangout/CLAUDE.md`.
+
+---
+
+## Kai's Cinema: A Text Adventure (`Cinema Text/`)
+
+Parser-driven text adventure version of the 3D cinema, in the style of early-80s mainframe adventures (status line, `>` prompt, score and moves). Same cast, rooms and Iris errands as the 3D game, plus the trash room, the missing reel and a Main Theater with two endings. The screens open the real games in an overlay. Vanilla JS in one `index.html`, no dependencies. Full notes in `Cinema Text/CLAUDE.md`.

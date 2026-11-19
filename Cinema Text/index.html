@@ -1,0 +1,1455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kai's Cinema: A Text Adventure</title>
+<style>
+    :root { --fg: #b8f0b0; --dim: #6f9c6a; --bg: #050805; --hi: #e9ffe4; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+        font-family: Menlo, Monaco, Consolas, 'Courier New', monospace; font-size: 16px; line-height: 1.5; }
+    body { display: flex; flex-direction: column; }
+    #status { flex: none; display: flex; justify-content: space-between; gap: 16px; padding: 3px 14px;
+        background: var(--fg); color: var(--bg); font-weight: bold; white-space: nowrap; overflow: hidden; }
+    #status span:first-child { overflow: hidden; text-overflow: ellipsis; }
+    #screen { flex: 1; overflow-y: auto; padding: 18px 14px 40vh; text-shadow: 0 0 6px rgba(150,255,140,0.25); }
+    #out, #line { max-width: 76ch; margin: 0 auto; }
+    #out p { margin: 0 0 1em; white-space: pre-wrap; }
+    #out .cmd { color: var(--hi); margin-top: 1.4em; }
+    #out .rt { color: var(--hi); font-weight: bold; margin-bottom: 0.2em; }
+    #out .sys { color: var(--dim); }
+    #out .say { color: var(--hi); }
+    #out .opt { margin: 0; padding-left: 2ch; }
+    #out .death { color: var(--hi); text-align: center; }
+    #out .art, #out .map { white-space: pre; overflow-x: auto; line-height: 1.25; }
+    #out .art { color: var(--dim); font-size: 14px; }
+    #out .map { font-size: 13px; }
+    #out .map .here { background: var(--fg); color: var(--bg); }
+    #bag { flex: none; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; padding: 4px 14px; border-bottom: 1px solid #1d3a1d; background: #081008; min-height: 34px; }
+    #bag .slot { display: inline-flex; align-items: center; gap: 4px; color: var(--hi); }
+    img.ico { width: 24px; height: 24px; image-rendering: pixelated; vertical-align: -6px; margin-right: 4px; cursor: pointer; filter: drop-shadow(0 0 3px rgba(150,255,140,0.25)); }
+    img.ico:hover { filter: drop-shadow(0 0 4px rgba(233,255,228,0.8)); }
+    #line { display: flex; gap: 1ch; }
+    #cmd { flex: 1; background: none; border: 0; outline: none; color: var(--hi); font: inherit; caret-color: var(--hi); padding: 0; }
+    #gameModal { position: fixed; inset: 0; display: none; flex-direction: column; background: rgba(0,0,0,0.92); z-index: 5; padding: 12px; }
+    #gameModal.open { display: flex; }
+    #gameHead { display: flex; justify-content: space-between; padding: 4px 10px; background: var(--fg); color: var(--bg); font-weight: bold; }
+    #gameHead button { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; }
+    #gameFrame { flex: 1; border: 2px solid var(--fg); border-top: 0; background: #fff; }
+</style>
+</head>
+<body>
+<div id="status"><span id="sroom"></span><span id="sright"></span></div>
+<div id="bag" aria-label="What you are carrying"></div>
+<div id="screen">
+    <div id="out"></div>
+    <div id="line"><span>&gt;</span><input id="cmd" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Command"></div>
+</div>
+<div id="gameModal">
+    <div id="gameHead"><span id="gameTitle"></span><button id="gameClose">[ESC] LEAVE THE SCREENING</button></div>
+    <iframe id="gameFrame" title="Screening"></iframe>
+</div>
+
+<script>
+// =====================================================================
+// Output
+// =====================================================================
+const out = document.getElementById('out'), screenEl = document.getElementById('screen'), cmdEl = document.getElementById('cmd');
+function say(text, cls) { const p = document.createElement('p'); if (cls) p.className = cls; p.textContent = text; if (!['cmd', 'art', 'map'].includes(cls)) decorate(p); out.appendChild(p); }
+function scrollDown() { screenEl.scrollTop = screenEl.scrollHeight; }
+
+// =====================================================================
+// Pixel icons (12×12, drawn from text grids; '.' is transparent)
+// =====================================================================
+const PAL = { k: '#141414', w: '#f4f1e6', t: '#e8d9a8', G: '#2f7a3a', g: '#7fcf6f', y: '#f6cf45', o: '#e8902c', r: '#d0402f', b: '#6b3a1e', B: '#c8894a',
+    s: '#b9c3cc', S: '#5b6670', p: '#8d63c9', C: '#1c3f5c', c: '#7fdcff', m: '#f2f2f2' };
+const GRIDS = {
+    bill: ['............', '............', 'kkkkkkkkkkkk', 'kgGGGGGGGGgk', 'kGgggkkggggk', 'kGggkggkgggk', 'kGgggkkggggk', 'kGggggggggGk', 'kgGGGGGGGGgk', 'kkkkkkkkkkkk', '............', '............'],
+    ticket: ['............', '............', 'kkkkkkkkkkkk', 'kttttrrttttk', '.ktttrrtttk.', 'kttttrrttttk', 'kttttrrttttk', '.ktttrrtttk.', 'kttttrrttttk', 'kkkkkkkkkkkk', '............', '............'],
+    envelope: ['............', '............', 'kkkkkkkkkkkk', 'kwkwwwwwwkwk', 'kwwkwwwwkwwk', 'kwwwkwwkwwwk', 'kwwwwkkwwwwk', 'kwwwwwwwwrrk', 'kwwwwwwwwrrk', 'kkkkkkkkkkkk', '............', '............'],
+    crowbar: ['.......kkk..', '......krrrk.', '.......kkrk.', '.......krk..', '......krk...', '.....krk....', '....krk.....', '...krk......', '..krk.......', '.krk........', '.kk.........', '............'],
+    oldKey: ['............', '............', '..kkk.......', '.kyyyk......', 'kyk.kyk.....', 'kyk.kykkkkkk', 'kyk.kyyyyyyk', '.kyyykkkykyk', '..kkk...kkkk', '............', '............', '............'],
+    pass: ['............', 'kkkkkkkkkkkk', 'kyyyyyyyyyyk', 'kywwwwwwwwyk', 'kywwkkkkwwyk', 'kywkwppwkwyk', 'kywwkkkkwwyk', 'kywwwwwwwwyk', 'kywkkkkkkwyk', 'kyyyyyyyyyyk', 'kkkkkkkkkkkk', '............'],
+    note: ['............', '..kkkkkkkk..', '..kwwwwwwk..', '..kwkkkkwk..', '..kwwwwwwk..', '..kwkkkwwk..', '..kwwwwwwk..', '..kwkkkkwk..', '..kwwwwwwk..', '..kkkkkkkk..', '............', '............'],
+    pizza: ['............', 'kkkkkkkkkkkk', 'kBBBBBBBBBBk', '.kyyryyyyrk.', '.kyyyyryyyk.', '..kyryyyyk..', '..kyyyyyrk..', '...kyyryk...', '...kyyyyk...', '....kyyk....', '....kyk.....', '.....kk.....'],
+    soda: ['......kk....', '......km....', '......km....', '.kkkkkkmkkk.', '.kwwwwwwwwk.', '..krrrrrrk..', '..krwwwwrk..', '..krwrrwrk..', '..krrrrrrk..', '...krrrrk...', '...kkkkkk...', '............'],
+    fries: ['............', '...k.k.k.k..', '..kykykykyk.', '..kykykykyk.', '..kykykykyk.', '.krrrrrrrrk.', '.krwwrrwwrk.', '.krrwwwwrrk.', '..krrrrrrk..', '..krrrrrrk..', '...kkkkkk...', '............'],
+    hamburger: ['............', '...kkkkkk...', '..kBBBBBBk..', '.kBBwBBwBBk.', '.kBBBBBBBBk.', '.kggggggggk.', '.kyyyyyyyyk.', '.kbbbbbbbbk.', '.kbbbbbbbbk.', '.kBBBBBBBBk.', '..kkkkkkkk..', '............'],
+};
+// Round icons are easier to draw with a little maths than by hand.
+function roundIcon(fill) {
+    const g = [];
+    for (let y = 0; y < 12; y++) { let row = ''; for (let x = 0; x < 12; x++) row += fill(Math.hypot(x - 5.5, y - 5.5), x, y); g.push(row); }
+    return g;
+}
+GRIDS.reel = roundIcon((d, x, y) => {
+    if (d > 5.6) return '.'; if (d > 4.7) return 'k'; if (d < 1.2) return 'k';
+    for (const a of [0, 2.09, 4.19]) if (Math.hypot(x - 5.5 - Math.cos(a) * 2.9, y - 5.5 - Math.sin(a) * 2.9) < 1.3) return 'S';
+    return 's';
+});
+GRIDS.lens = roundIcon((d, x, y) => d > 5.6 ? '.' : d > 4.7 ? 'k' : d > 3.8 ? 'y' : (x === 4 && y === 3) || (x === 3 && y === 4) ? 'c' : d < 1.3 ? 'p' : 'C');
+const ICONS = {};
+for (const [id, grid] of Object.entries(GRIDS)) {
+    const c = document.createElement('canvas'); c.width = c.height = 12;
+    const x = c.getContext('2d');
+    grid.forEach((row, yy) => [...row].forEach((ch, xx) => { if (PAL[ch]) { x.fillStyle = PAL[ch]; x.fillRect(xx, yy, 1, 1); } }));
+    ICONS[id] = c.toDataURL();
+}
+// Which item each icon stands for, the word clicking it types, and where it shows up inline in the prose.
+const ICON_INFO = {
+    bill: { word: 'bill', name: 'Money', re: /five-dollar bill|\$\d+ in cash/i },
+    ticket: { word: 'ticket', name: 'Tickets', re: /\btickets?\b(?! (?:booth|window|seller|slot))/i },
+    envelope: { word: 'envelope', name: 'Envelope', re: /\benvelope\b/i },
+    crowbar: { word: 'crowbar', name: 'Crowbar', re: /\bcrowbar\b/i },
+    oldKey: { word: 'key', name: 'Old brass key', re: /\bold (?:brass )?key\b/i },
+    pass: { word: 'pass', name: 'Critic Pass', re: /\bcritic pass\b/i },
+    lens: { word: 'lens', name: 'The Iris\'s lens', re: /\bIris's lens\b|\bthe lens\b/i },
+    reel: { word: 'reel', name: 'Reel #7', re: /\breel #7\b|film can marked #7|round metal film can/i },
+    note: { word: 'note', name: 'The projectionist\'s note', re: /scrap of paper|\bnote from the trash room\b/i },
+    pizza: { word: 'pizza', name: 'Pizza', re: /\bpizza\b/i },
+    soda: { word: 'soda', name: 'Soda', re: /\bsoda\b(?! fountain)/i },
+    fries: { word: 'fries', name: 'Fries', re: /\bfries\b/i },
+    hamburger: { word: 'burger', name: 'Hamburger', re: /\b(?:ham)?burger\b/i },
+};
+function iconImg(id) {
+    const img = document.createElement('img');
+    img.src = ICONS[id]; img.className = 'ico'; img.alt = ''; img.title = `${ICON_INFO[id].name} (click to type "${ICON_INFO[id].word}")`;
+    img.dataset.word = ICON_INFO[id].word;
+    return img;
+}
+// Put a pixel icon in front of the first mention of each item in a paragraph.
+function decorate(p) {
+    const text = p.textContent, hits = [];
+    for (const [id, info] of Object.entries(ICON_INFO)) {
+        const m = info.re.exec(text);
+        if (m && !hits.some(h => m.index < h.end && m.index + m[0].length > h.start)) hits.push({ id, start: m.index, end: m.index + m[0].length });
+    }
+    if (!hits.length) return;
+    hits.sort((a, b) => a.start - b.start);
+    p.textContent = '';
+    let pos = 0;
+    hits.forEach(h => { p.append(text.slice(pos, h.start), iconImg(h.id)); pos = h.start; });
+    p.append(text.slice(pos));
+}
+// Clicking any icon types its item's name at the prompt, so you can build commands without typing the noun.
+document.addEventListener('click', e => {
+    const word = e.target.dataset?.word; if (!word) return;
+    const v = cmdEl.value;
+    cmdEl.value = v && !v.endsWith(' ') ? v + ' ' + word + ' ' : v + word + ' ';
+    cmdEl.focus(); e.stopPropagation();
+}, true);
+function renderBag() {
+    const bag = document.getElementById('bag'); bag.innerHTML = '';
+    const add = (id, label) => { const s = document.createElement('span'); s.className = 'slot'; s.append(iconImg(id)); if (label != null) s.append(String(label)); bag.append(s); };
+    add('bill', '$' + S.money);
+    add('ticket', S.tickets);
+    Object.keys(ICON_INFO).filter(id => OBJ[id]?.item && S.locs[id] === 'inv').forEach(id => add(id));
+}
+
+// =====================================================================
+// Title cards, shown the first time you enter a few key rooms
+// =====================================================================
+const ART = {
+    street: [
+        '   .--------------------------------------------.',
+        '   |  o  o  o  o  o  o  o  o  o  o  o  o  o  o  |',
+        "   |          K A I ' S    C I N E M A          |",
+        '   |  o  o  o  o  o  o  o  o  o  o  o  o  o  o  |',
+        "   '--------------------------------------------'",
+        '     ||  [AGE OF WAR]  |  ____  |  [SNAKE GAME] ||',
+        '     ||  [BLAST BLOCK] | |    | | [STICK SOCCER]||',
+        '  ___||________________|_|____|_|_______________||___',
+    ],
+    alley: [
+        '              _____________________________',
+        '             /   _______________________   \\',
+        '            |   |  .  .  .  .  .  .  .  |   |',
+        '            |   |   ~  ~  (o)  ~  ~     |   |',
+        '      ______|___|_______________________|___|______',
+        '     |  _______________________________________  |',
+        '     | |   |   |   |   |   |   |   |   |   |   | |',
+        '     | |___|___|___|___|___|___|___|___|___|___| |',
+        '     |_______________________________________________|',
+        '        (O)                                     (O)',
+    ],
+    lobby: [
+        '                 .-~~~~~~~~~~~~~~~~~-.',
+        "             .-~      .-'''''-.      ~-.",
+        "           .'       /   .---.   \\       '.",
+        '          (        |   ( (O) )   |        )',
+        "           '.       \\   '---'   /       .'",
+        "             '-.      '-.....-'      .-'",
+        "     ~~~~~~~~~~~~'~-..___________..-~'~~~~~~~~~~~~",
+    ],
+    ledge: [
+        '      _____________________________________',
+        '     |                                     |',
+        '     |       T H E    D E S C E N T        |',
+        '     |          play if you dare           |',
+        '     |_____________________________________|',
+        '           ||                       ||',
+        '   ~^~^~^~^||~^~^~^~^~^~^~^~^~^~^~^~||^~^~^~^~',
+    ],
+    mainTheater: [
+        '   _______________________________________________',
+        '  |                                               |',
+        '  |                                               |',
+        '  |                                               |',
+        '  |_______________________________________________|',
+        '     n  n  n  n  n  n  n  n  n  n  n  n  n  n  n',
+        '    n  n  n  n  n  n  n  n  n  n  n  n  n  n  n  n',
+    ],
+};
+function titleCard(id) {
+    if (!ART[id] || S.seenArt.includes(id)) return;
+    S.seenArt.push(id);
+    say(ART[id].join('\n'), 'art');
+}
+
+// =====================================================================
+// MAP: the rooms you have been to, in box-drawing characters
+// =====================================================================
+const MAP_NODES = { // room: [x, y, label]
+    screen3: [4, 0, 'Screen 3'], hallN: [16, 0, 'Hall N'], screen4: [26, 0, 'Screen 4'],
+    screen1: [4, 2, 'Screen 1'], hallS: [16, 2, 'Hall S'], screen2: [26, 2, 'Screen 2'],
+    mainTheater: [25, 4, 'Main Theater'],
+    westLobby: [2, 6, 'Concessions'], lobby: [17, 6, 'Lobby'], eastLobby: [26, 6, 'Lounge'],
+    booth: [5, 8, 'Booth'], street: [14, 8, 'Main Street'], alley: [29, 8, 'Alley'], trash: [38, 8, 'Trash Room'],
+    jail: [0, 10, 'Holding 01'], ledge: [26, 10, 'The Descent'], basalt: [41, 10, 'Basalt'], pillar: [51, 10, 'Pillar'],
+    duct: [2, 12, 'Duct'], far: [34, 12, 'Far Platform'], slab: [50, 12, 'Low Slab'],
+    fans: [0, 14, 'Fan Chamber'], ladder: [1, 16, 'Ladder'],
+};
+// [from, to, kind, fixed x (vertical) or cell list (diagonal)]
+const MAP_EDGES = [
+    ['screen3', 'hallN', 'h'], ['hallN', 'screen4', 'h'], ['screen1', 'hallS', 'h'], ['hallS', 'screen2', 'h'], ['hallN', 'hallS', 'v', 20],
+    ['hallS', 'lobby', 'v', 20], ['lobby', 'mainTheater', 'd', [[24, 5]]], ['westLobby', 'lobby', 'h'], ['lobby', 'eastLobby', 'h'], ['lobby', 'street', 'v', 20],
+    ['booth', 'street', 'h'], ['street', 'alley', 'h'], ['alley', 'trash', 'h'], ['alley', 'ledge', 'v', 32],
+    ['ledge', 'basalt', 'h'], ['basalt', 'pillar', 'h'], ['pillar', 'slab', 'v', 55], ['far', 'slab', 'h'],
+    ['jail', 'duct', 'v', 5], ['duct', 'fans', 'v', 5], ['fans', 'ladder', 'v', 5],
+];
+function drawMap() {
+    const seen = new Set(S.visited.concat(S.room));
+    const W = 61, H = 17, grid = Array.from({ length: H }, () => Array(W).fill(' '));
+    const box = id => { const [x, y, label] = MAP_NODES[id]; return { x, y, x2: x + label.length + 1, text: `[${label}]` }; };
+    for (const [a, b, kind, extra] of MAP_EDGES) {
+        if (!seen.has(a) || !seen.has(b)) continue;
+        const A = box(a), B = box(b);
+        if (kind === 'h') { const [l, r] = A.x < B.x ? [A, B] : [B, A]; for (let x = l.x2 + 1; x < r.x; x++) grid[A.y][x] = '─'; }
+        else if (kind === 'v') { const [t, u] = A.y < B.y ? [A, B] : [B, A]; for (let y = t.y + 1; y < u.y; y++) grid[y][extra] = '│'; }
+        else extra.forEach(([x, y]) => { grid[y][x] = '╱'; });
+    }
+    for (const id of seen) { if (!MAP_NODES[id]) continue; const b = box(id); [...b.text].forEach((ch, i) => { grid[b.y][b.x + i] = ch; }); }
+    const p = document.createElement('p'); p.className = 'map';
+    p.append('MAP OF EXPLORED AREAS\n\n');
+    const here = MAP_NODES[S.room] && box(S.room);
+    const used = grid.map(r => r.join('').trim() !== '');
+    const top = used.indexOf(true), bottom = used.lastIndexOf(true);
+    grid.forEach((row, y) => {
+        if (y < top || y > bottom) return;
+        let line = row.join('').replace(/\s+$/, '');
+        if (here && y === here.y) {
+            p.append(line.slice(0, here.x));
+            const s = document.createElement('span'); s.className = 'here'; s.textContent = here.text; p.append(s);
+            p.append(line.slice(here.x + here.text.length) + '\n');
+        } else p.append(line + '\n');
+    });
+    p.append(`\nYou are in the highlighted room. ${seen.size} of ${Object.keys(MAP_NODES).length} places explored.`);
+    out.appendChild(p);
+}
+function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+function cap(s) { return s[0].toUpperCase() + s.slice(1); }
+
+// =====================================================================
+// State
+// =====================================================================
+const SAVE_KEY = 'kaiCinemaText.v1';
+function fresh() {
+    return {
+        room: 'street', money: 25, tickets: 0, moves: 0, scored: [], visited: [], locs: {}, flags: {},
+        criminal: false, unpaid: [], played: [], bills: [], caveVisits: 0, metGerald: false, geraldsCash: null,
+        strangerFed: false, talked: [], seenArt: [], sitting: null, lens: false, ventKicks: 0, ventOpen: false, verbose: false, over: false,
+        iris: { available: ['feedTheBench'], active: null, claimed: [], events: { arcadePlayed: 0, died: 0, trashRoomSearched: 0, escapedJail: 0 } },
+    };
+}
+let S = fresh();
+let conv = null, hilo = null, undoStack = [], lastCmd = '';
+const has = id => S.locs[id] === 'inv';
+const flag = k => !!S.flags[k];
+
+// =====================================================================
+// Scoring
+// =====================================================================
+const POINTS = { ticket: 5, fed: 10, backhall: 5, screen1: 5, screen2: 5, screen3: 5, screen4: 5, descent: 5, lava: 10, honest: 10,
+    trash: 5, reel: 10, escape: 10, critic: 5, mainTheater: 5, ending: 15 };
+const ERRAND_POINTS = 2;
+const RANKS = [[0, 'Walk-in'], [20, 'Ticket Holder'], [45, 'Regular'], [70, 'Critic'], [100, 'Projectionist'], [130, 'Witness']];
+function maxScore() { return Object.values(POINTS).reduce((a, b) => a + b, 0) + ERRAND_POINTS * Object.keys(IRIS_QUESTS).length; }
+function score() { return S.scored.reduce((n, k) => n + (POINTS[k] ?? ERRAND_POINTS), 0); }
+function award(key) {
+    if (S.scored.includes(key)) return;
+    S.scored.push(key);
+    const n = POINTS[key] ?? ERRAND_POINTS;
+    say(`[Your score has gone up by ${n === 1 ? 'one point' : n + ' points'}.]`, 'sys');
+}
+function rank() { const s = score(); return RANKS.filter(([n]) => s >= n).pop()[1]; }
+
+// =====================================================================
+// The Iris's errands (ported from 3D Game Engine/src/game/irisQuests.js)
+// =====================================================================
+const IRIS_QUESTS = {
+    feedTheBench: { title: 'A Debt on the Bench',
+        ask: 'The man on the bench is holding something that belongs to this building. Feed him. Do not ask me why I cannot.',
+        objective: 'Share food with the man on the lobby bench.', measure: () => S.strangerFed ? 1 : 0, need: 1, money: 5,
+        done: 'He gave it to you. Good. He has been holding it against me for years.', leadsTo: ['countTheDrops', 'underTheStreet'] },
+    countTheDrops: { title: 'Loose Change',
+        ask: 'Money falls out of guests, and the building hides it. Three bills. Find every one. I need to know where it puts things.',
+        objective: 'Find three hidden bills.', measure: () => S.bills.length, need: 3, money: 10,
+        done: 'Beside the bins, in the corner, beneath the street. One of them was never the building\'s. It was Gerald\'s. Take this. Call it interest.', leadsTo: ['feedTheMachine'] },
+    feedTheMachine: { title: 'Feed the Machine',
+        ask: 'The machines in the arcade and I share a wire. Every coin you drop, I hear. Play them three times. I like the sound.',
+        objective: 'Play the arcade machines 3 times.', event: 'arcadePlayed', need: 3, money: 15,
+        done: 'I heard every one. Here is what you lost, and a little more. The machines will not miss it. They do not keep count. I do.', leadsTo: ['watchForMe'] },
+    underTheStreet: { title: 'Under the Street',
+        ask: 'The dumpster outside is not a dumpster. Climb in. Something down there owes me a reflection.',
+        objective: 'Climb into the dumpster outside and reach the lava cave.', measure: () => S.caveVisits, need: 1, money: 10,
+        done: 'You came back warm. The cave remembers you now. That will matter later.', leadsTo: ['fallForMe', 'dumpsterDive'] },
+    fallForMe: { title: 'Fall For Me',
+        ask: 'I have never seen what the heat does to a guest. Fall in. Just once. I will make it worth more than it costs you.',
+        objective: 'Fall into the lava. On purpose.', event: 'died', need: 1, money: 25,
+        done: 'So that is what it does. Thank you. Here is more than the lava took. Do not tell Gerald I asked.', leadsTo: [] },
+    dumpsterDive: { title: 'Dumpster Diving',
+        ask: 'Behind the dumpster is a room the staff throw things into and never take out again. Search the trash. Bring me what the projectionist threw away.',
+        objective: 'Search the trash room behind the dumpster.', event: 'trashRoomSearched', need: 1, money: 30,
+        done: 'Film cans. Empty. He kept the reel somewhere else, then. Of course he did.', leadsTo: ['theMissingReel'] },
+    watchForMe: { title: 'Watch For Me',
+        ask: 'I cannot leave the fountain. Watch three different screenings and let me see them through you.',
+        objective: 'Play 3 different games in the cinema.', measure: () => S.played.length, need: 3, money: 15,
+        done: 'I saw all three through you. Your eyes are slower than mine, but they will do.', leadsTo: ['noTicket'] },
+    noTicket: { title: 'Give Him a Reason',
+        ask: 'I want to see how the officer moves when I call him. Break a rule where I can see it. Walking into a screening without a ticket will do. So will something that is not yours.',
+        objective: 'Get marked as a criminal (sneaking into a screening works).', measure: () => (S.criminal || S.unpaid.length) ? 1 : 0, need: 1, money: 10,
+        done: 'There. Now he is looking for you. Do not take that personally. I needed to see him run.', leadsTo: ['throughTheVent'] },
+    throughTheVent: { title: 'Through the Vent',
+        ask: 'They will put you in the holding cell. Do not pay the deputy. Leave the way the air leaves.',
+        objective: 'Escape the holding cell through the vent.', event: 'escapedJail', need: 1, money: 25,
+        done: 'Out through the vent. The deputy will write a report I will read before he does.', leadsTo: ['theMissingReel'] },
+    theMissingReel: { title: 'The Missing Reel',
+        ask: 'The projectionist cut one reel from every film and hid it. It shows the night I opened. Find it and bring it to me. Do not watch it.',
+        objective: 'Find the projectionist\'s missing reel and bring it to the fountain.', measure: () => has('reel') ? 1 : 0, need: 1, money: 50,
+        done: 'You did not watch it. I can tell. Take the lens. Now you will see what I see.', leadsTo: [] },
+};
+const Q = {
+    progress() { const a = S.iris.active; if (!a) return 0; const q = IRIS_QUESTS[a.id]; const c = q.event ? S.iris.events[q.event] : q.measure(); return Math.min(q.need, c - a.start); },
+    notify(ev) { S.iris.events[ev] = (S.iris.events[ev] ?? 0) + 1; },
+    accept(id) { const q = IRIS_QUESTS[id]; S.iris.available = S.iris.available.filter(x => x !== id); S.iris.active = { id, start: q.event ? S.iris.events[q.event] : 0, complete: false }; Q.check(true); },
+    check(quiet) {
+        const a = S.iris.active; if (!a || a.complete) return;
+        if (Q.progress() >= IRIS_QUESTS[a.id].need) { a.complete = true; if (!quiet) say('Somewhere in the building, an eye blinks. (Your errand for the Iris is done. Return to the fountain.)', 'sys'); }
+    },
+    next() { return S.iris.available[0] ?? null; },
+    claim() {
+        const id = S.iris.active.id, q = IRIS_QUESTS[id];
+        S.iris.claimed.push(id); S.iris.active = null;
+        q.leadsTo.forEach(n => { if (!S.iris.claimed.includes(n) && !S.iris.available.includes(n)) S.iris.available.push(n); });
+        return [id, q];
+    },
+};
+
+// =====================================================================
+// Rooms
+// =====================================================================
+const SCREENS = {
+    screen1: { n: 1, title: 'Age of War', url: '../ageOfWar.html', color: 'orange-red', side: 'w', hall: 'hallS' },
+    screen2: { n: 2, title: 'Blast Block', url: '../blastblock.html', color: 'blue', side: 'e', hall: 'hallS' },
+    screen3: { n: 3, title: 'Stick Soccer', url: '../stick/index.html', color: 'green', side: 'w', hall: 'hallN' },
+    screen4: { n: 4, title: 'Snake Game', url: '../snakeGame.html', color: 'mint', side: 'e', hall: 'hallN' },
+};
+const ROOMS = {
+    street: {
+        name: 'Main Street, Outside the Cinema',
+        desc: () => `You are standing on a wet street under a moonlit sky. To the north looms the facade of KAI'S CINEMA, its marquee bulbs chasing each other around the sign in an endless loop. Four columns edged in magenta neon hold up the front, and between them four posters glow as if they were lit from inside. West of the glass doors is a ticket booth with a single lit window. To the east the street narrows into an alley where a dumpster squats against the wall.`,
+        exits: { n: 'lobby', in: 'lobby', w: 'booth', e: 'alley' },
+        noExit: { s: 'Nothing south but more empty street. The cinema is the only thing open tonight.' },
+        lens: 'The marquee bulbs are not chasing each other. They are counting. Every bulb that lights is a guest who came in and did not come out the same.',
+        ambient: ['A car that isn\'t there goes past. You hear it, but the street stays empty.', 'The marquee bulbs stutter, then catch up with themselves.', 'Somewhere inside, a projector starts with a soft clatter.'],
+    },
+    booth: {
+        name: 'Ticket Booth',
+        desc: () => `A narrow glass booth is set into the cinema's west wall. ${S.geraldsCash === 'kept' ? 'Gerald sits behind the glass and very pointedly does not look at you.' : 'Behind the glass sits Gerald, an old man in a cardigan with the patience of furniture.'} A brass slot under the window has been worn smooth by decades of tickets. A hand-lettered card is taped to the glass. The street is east.`,
+        exits: { e: 'street', out: 'street' },
+        lens: 'Gerald\'s reflection in the glass is younger than he is. It sold the first ticket this building ever sold, and it has not stopped looking for the person who bought it.',
+    },
+    alley: {
+        name: 'Beside the Dumpster',
+        desc: () => `A narrow alley between the cinema and a squat concrete building whose sign reads SECURITY HOLDING. A big green dumpster sits against the cinema wall with its lid propped open. It smells less like garbage than it should, and a faint orange glow seems to come from inside it.${flag('dumpsterMoved') ? ' The dumpster has been rolled aside, uncovering a rusted door marked STAFF — NO RE-ENTRY.' : ''} The street is west.`,
+        exits: { w: 'street', d: () => enterDumpster(), in: () => enterDumpster(), e: () => flag('dumpsterMoved') ? 'trash' : null },
+        noExit: { e: 'The dumpster is in the way.', n: 'The cinema wall.', s: 'The door of SECURITY HOLDING has no handle on this side.' },
+        lens: 'The dumpster is a mouth. The building feeds it the things it wants forgotten, and the street keeps them warm.',
+    },
+    trash: {
+        name: 'Trash Room',
+        desc: () => 'A low room heaped with the cinema\'s refuse: torn ticket stubs, crushed cups, a dune of empty popcorn bags and towers of round metal film cans. A single bulb on a cord swings slowly, although there is no draft. The rusted door is west.',
+        exits: { w: 'alley', out: 'alley' },
+        lens: 'Every stub in here still has a seat number on it. Every seat number is still taken.',
+    },
+    ledge: {
+        name: 'The Descent',
+        desc: () => 'You stand on a hot stone ledge in a vast cavern under the street. Far below, a lake of lava breathes in slow orange pulses. A painted sign bolted to the rock reads THE DESCENT, and beneath it, in smaller letters: PLAY IF YOU DARE. Stepping stones rise out of the lava toward a distant platform where something purple glows. Nearest you are a flat basalt stone, a stone webbed with fine cracks, and a black stone that shines like glass. Above, the bottom of the dumpster is a square of night sky.',
+        exits: { u: 'alley', out: 'alley' },
+        jumps: { basalt: 'basalt', flat: 'basalt', cracked: 'crumble', cracks: 'crumble', webbed: 'crumble', black: 'burn', glass: 'burn', obsidian: 'burn', shiny: 'burn', glassy: 'burn' },
+        lens: 'The lava is not hot. It is angry. It remembers every guest who has fallen into it, and it would like to remember you.',
+    },
+    basalt: {
+        name: 'Basalt Stone',
+        desc: () => 'You crouch on a flat basalt stone barely wider than your shoes. Heat shimmers on every side. Ahead rises a tall pillar of stone, higher than you would like. Beside it a pale, porous stone bobs gently in the lava, as though it isn\'t anchored to anything. The ledge is behind you.',
+        exits: {},
+        jumps: { pillar: 'pillar', tall: 'pillar', pale: 'sink', porous: 'sink', pumice: 'sink', bobbing: 'sink', ledge: 'ledge', back: 'ledge' },
+        lens: 'Someone has stood here before you and been very afraid. The stone kept that, too.',
+    },
+    pillar: {
+        name: 'Top of the Pillar',
+        desc: () => 'The top of the pillar is just wide enough to stand on. From up here you can see the far platform clearly: a broad shelf of rock with a ring of purple light turning at its centre. It is a long way off. Between you and it sit two slabs of rock just above the lava: a low grey slab, and a closer one glowing a dull, sullen red. The basalt stone is back the way you came.',
+        exits: {},
+        jumps: { low: 'slab', grey: 'slab', gray: 'slab', red: 'burn', glowing: 'burn', far: 'farjump', platform: 'farjump', basalt: 'basalt', back: 'basalt' },
+        lens: 'From up here the lava makes a shape. It is an eye, and it is closed.',
+    },
+    slab: {
+        name: 'Low Slab',
+        desc: () => 'A low grey slab of rock, close enough to the lava that the soles of your shoes go soft. The far platform is an easy hop from here. The pillar looms behind you.',
+        exits: {},
+        jumps: { far: 'far', platform: 'far', shelf: 'far', pillar: 'pillar', back: 'pillar' },
+    },
+    far: {
+        name: 'The Far Platform',
+        desc: () => 'A broad shelf of black rock, blessedly cool. At its centre hangs a ring of purple light, slowly turning: a portal, humming a tune you almost recognise. A crooked iron ladder climbs the cavern wall toward a hatch in the roof. The low slab is back across the lava.',
+        exits: { u: 'street' },
+        jumps: { slab: 'slab', low: 'slab', back: 'slab' },
+        enterMsg: { u: 'You climb the iron ladder, push open a hatch, and come up through a grate in the middle of Main Street.' },
+        lens: 'The portal is a pupil. You are standing in the eye of something very large, and it is looking up at the street.',
+    },
+    lobby: {
+        name: 'The Lobby',
+        desc: () => `A grand, dark lobby. The black floor is polished enough to hold reflections, and rings of cyan light are set into it, spreading outward from a round pool at the centre of the room. In the pool, something enormous turns to look at you. It is an eye: wet and glossy, the size of a car, its pupil swelling and shrinking like slow breathing. Above it, a chandelier of concentric rings rotates without a sound.\n\nThe concession stand and the arcade are west; a check-in desk and the lounge are east. In the north wall is a narrow door marked BACK HALL • SCREENS 1–4. Northeast, a much larger pair of doors sits under a sign reading MAIN THEATER, ${flag('mainOpen') ? 'standing open' : 'chained shut'}. The street doors are south.`,
+        exits: { s: 'street', out: 'street', w: 'westLobby', e: 'eastLobby', n: () => backHallDoor(), ne: () => mainTheaterDoor() },
+        lens: 'The Iris is not in the pool. The pool is in the Iris. Everything in this lobby, including you, is floating on its surface.',
+    },
+    westLobby: {
+        name: 'Concessions and Arcade',
+        desc: () => 'Benny\'s concession stand runs along the west wall: glass cases glowing under heat lamps, a soda fountain that gurgles to itself, a menu board in red letters. Behind the counter stands Benny, a round man in a paper hat who looks delighted to see literally anyone. In the corner three arcade cabinets flicker: a SLOT MACHINE, a HI-LO card table and a tall PLINKO board. The fountain is east.',
+        exits: { e: 'lobby', out: 'lobby' },
+        lens: 'The arcade cabinets have a wire running out of their backs, under the floor, toward the fountain. Every coin you drop, something hears.',
+    },
+    eastLobby: {
+        name: 'Check-In and Lounge',
+        desc: () => `Low velvet sofas are arranged around a glass coffee table. Rita's check-in desk stands against the wall, a brass bell on its counter and Rita behind it, smiling the professional smile of someone on hour nine. On a bench facing the fountain sits a thin man in a worn coat, ${S.strangerFed ? 'who gives you a small nod' : 'perfectly still, watching the eye'}. The fountain is west.`,
+        exits: { w: 'lobby', out: 'lobby' },
+        lens: 'The man on the bench has no reflection in the floor. He has been sitting here so long that the building stopped counting him as a guest.',
+    },
+    hallS: {
+        name: 'Back Hall, South End',
+        desc: () => 'A long corridor of dark carpet and gold trim. A NOW SHOWING board glows overhead. To the west is a gold-framed door under an orange-red marquee: SCREEN 1 · AGE OF WAR. To the east, under a blue marquee: SCREEN 2 · BLAST BLOCK. The hall continues north. The lobby is south.',
+        exits: { s: 'lobby', out: 'lobby', n: 'hallN', w: () => enterScreen('screen1'), e: () => enterScreen('screen2') },
+        lens: 'The carpet pattern is the same eye, repeated ten thousand times. They all look toward the lobby.',
+    },
+    hallN: {
+        name: 'Back Hall, North End',
+        desc: () => 'The hall widens here around a small bar with no bartender and a concession cart abandoned mid-pour. Two marquees face each other: SCREEN 3 · STICK SOCCER in green to the west and SCREEN 4 · SNAKE GAME in mint to the east. Officer Vale of Cinema Security walks a slow loop of the hall, hands clasped behind their back. The hall runs south.',
+        exits: { s: 'hallS', w: () => enterScreen('screen3'), e: () => enterScreen('screen4') },
+        lens: 'Officer Vale has an earpiece. The voice in it is very slow and very deep, and it is reading out your name.',
+    },
+    jail: {
+        name: 'Holding 01',
+        desc: () => `A concrete cell lit by a buzzing amber strip. There is a steel bunk with a thin blue blanket, and set into the door a bail slot beside a speaker grille and a stencilled sign: BAIL $10. High on the back wall is a maintenance vent, ${S.ventOpen ? 'its cover hanging open on one bolt' : 'bolted shut with four heavy bolts'}.`,
+        exits: { u: () => S.ventOpen ? 'duct' : null, in: () => S.ventOpen ? 'duct' : null },
+        noExit: { u: 'The vent is bolted shut.', in: 'The vent is bolted shut.', out: 'The door is locked. That is rather the point of it.', s: 'The door is locked. That is rather the point of it.' },
+        lens: 'There are tally marks on the underside of the bunk. Someone stopped counting at three hundred and sixty-five and drew an eye instead.',
+    },
+    duct: {
+        name: 'Maintenance Duct',
+        desc: () => 'A tall sheet-metal maintenance corridor, ribbed and humming. Warning lights blink amber along the ceiling. Across the floor ahead, two copper strips crackle with blue electricity, too wide apart to step between. A narrow ledge runs along one wall at waist height. The open vent to the cell is behind you, down.',
+        exits: { d: 'jail', back: 'jail' },
+        noExit: { n: 'The electrified strips are in the way. You could probably jump over them.' },
+        jumps: { strips: 'fans', copper: 'fans', electric: 'fans', over: 'fans', ahead: 'fans' },
+        lens: 'The duct breathes out toward the street and in toward the fountain. The building has lungs, and this is one of them.',
+    },
+    fans: {
+        name: 'Fan Chamber',
+        desc: () => `An enormous industrial fan fills the north end of the duct, its blades ${fanSlow(1) ? 'turning slowly, almost stopped. You could squeeze between them' : 'a grey blur. Every so often the fan winds down nearly to a stop before it spins back up'}. Through the gaps you can see green light. The electrified strips are back south.`,
+        exits: { n: () => fanSlow() ? 'ladder' : null, s: 'duct' },
+        noExit: { n: 'The blades would make short work of you. Better wait for them to slow down.' },
+        lens: 'The fan is not pushing air out. It is pulling something in.',
+    },
+    ladder: {
+        name: 'Street-Access Ladder',
+        desc: () => 'A small chamber washed in green light. A steel ladder painted safety green climbs to a round hatch overhead. The fan whirs behind you, to the south.',
+        exits: { u: () => escapeJail(), s: 'fans' },
+    },
+    mainTheater: {
+        name: 'The Main Theater',
+        desc: () => `The biggest room in the building. Hundreds of red velvet seats, most of them under dust sheets, slope down toward a screen so large you cannot see both edges at once. High at the back, behind a small square window, sits the projection booth: a single old projector, ${flag('reelLoaded') ? 'with a reel threaded on it' : 'empty and dark'}. It is very quiet. It feels like the room is holding its breath. The lobby is southwest.`,
+        exits: { sw: 'lobby', out: 'lobby', s: 'lobby' },
+        lens: null,
+    },
+};
+for (const [id, sc] of Object.entries(SCREENS)) {
+    ROOMS[id] = {
+        name: `Screen ${sc.n}: ${sc.title}`,
+        desc: () => `A small theater lit in ${sc.color}. Rows of dark seats step down toward the screen, split by an aisle with tiny lights set into the floor. A cone of projector light reaches from the back wall to the screen, which pulses gently with the title ${sc.title.toUpperCase()} over a large play symbol. A sign by the door reads: Tickets at all times — security is watching. The exit is ${sc.side === 'w' ? 'east' : 'west'}.`,
+        exits: { [sc.side === 'w' ? 'e' : 'w']: sc.hall, out: sc.hall },
+        lens: 'Every seat in here has someone in it. They are all very faint, and they are all facing you instead of the screen.',
+        screen: id,
+    };
+}
+const DIRS = { n: 'north', s: 'south', e: 'east', w: 'west', ne: 'northeast', nw: 'northwest', se: 'southeast', sw: 'southwest', u: 'up', d: 'down', in: 'in', out: 'out' };
+const DIR_WORDS = { north: 'n', south: 's', east: 'e', west: 'w', northeast: 'ne', northwest: 'nw', southeast: 'se', southwest: 'sw', up: 'u', down: 'd', inside: 'in', outside: 'out', exit: 'out', leave: 'out', back: 'back', upstairs: 'u', downstairs: 'd', climb: 'u' };
+function fanSlow(ahead = 0) { return (S.moves + ahead) % 4 < 2; }
+
+// =====================================================================
+// Objects
+//   at: room id, array of ids, or fn. item: portable (location kept in S.locs).
+// =====================================================================
+const OBJ = {
+    // --- Main Street ---
+    marquee: { at: 'street', words: ['marquee', 'sign', 'bulbs', 'lights', 'kai s cinema'], desc: 'KAI\'S CINEMA in letters a metre high. The bulbs around the border chase each other in a loop and never quite catch up.' },
+    facade: { at: 'street', words: ['facade', 'cinema', 'building', 'theater', 'theatre'], desc: 'Art-deco curves, neon trim and a lot of black glass. The building looks like it is waiting for something.' },
+    columns: { at: 'street', words: ['columns', 'column', 'pillars', 'neon', 'leftmost column'], desc: () => S.locs.facadeBill === 'street' && !flag('sawFacadeBill') ? (S.flags.sawFacadeBill = true, 'Four columns, each edged in a stripe of magenta neon. Between the leftmost column and the edge of the building, something papery has been pressed flat against the stone by the wind: a five-dollar bill.') : 'Four columns, each edged in a stripe of magenta neon.' },
+    posters: { at: 'street', words: ['posters', 'poster'], enter: () => say('Which one? AGE OF WAR, BLAST BLOCK, STICK SOCCER or SNAKE GAME.'), desc: 'Four posters glow between the columns: AGE OF WAR, BLAST BLOCK, STICK SOCCER and SNAKE GAME. Each one seems lit from somewhere deep behind the paper. You get the odd feeling you could step into one.' },
+    posterWar: { at: 'street', words: ['age of war poster', 'age of war', 'war poster', 'war'], desc: 'Two castles and an army that changes eras as it marches. The poster is warm to the touch.', enter: () => posterGame('Age of War', '../ageOfWar.html') },
+    posterBlast: { at: 'street', words: ['blast block poster', 'blast block', 'blast poster', 'blast', 'block'], desc: 'Coloured blocks tumbling down a grid, about to clear a line.', enter: () => posterGame('Blast Block', '../blastblock.html') },
+    posterSoccer: { at: 'street', words: ['stick soccer poster', 'stick soccer', 'soccer poster', 'soccer'], desc: 'Two stick figures and a ball frozen in mid-kick.', enter: () => posterGame('Stick Soccer', '../stick/index.html') },
+    posterSnake: { at: 'street', words: ['snake game poster', 'snake game', 'snake poster', 'snake'], desc: 'A glowing snake coiled around the title, its tongue out.', enter: () => posterGame('Snake Game', '../snakeGame.html') },
+    moon: { at: ['street', 'alley'], words: ['moon', 'sky', 'stars'], desc: 'A full moon with a faint halo. There are more stars than a city should have.' },
+    doors: { at: 'street', words: ['doors', 'door', 'glass doors', 'front doors'], desc: 'Glass doors with long brass handles. They open on their own when you walk up to them.' },
+    facadeBill: { item: true, start: 'street', words: ['bill', 'five', '5', 'money', 'five dollar bill', 'cash'], hidden: () => !flag('sawFacadeBill'), here: 'A five-dollar bill is pressed against the base of the leftmost column.', desc: 'A damp five-dollar bill.', money: 5 },
+    // --- Ticket booth ---
+    gerald: { at: 'booth', npc: true, words: ['gerald', 'man', 'old man', 'seller', 'ticket seller', 'cardigan'], desc: 'Gerald has the look of a man who has watched every film this building ever showed and remembers none of them fondly. His cardigan has elbow patches on the elbow patches.', talk: () => talkGerald() },
+    card: { at: 'booth', words: ['card', 'price', 'prices', 'hand lettered card'], desc: 'It reads: 1 TICKET $5 · 3 TICKETS $10. Underneath, in smaller writing: NO REFUNDS. NO EXCEPTIONS. NO.', readSame: true },
+    window: { at: 'booth', words: ['window', 'glass', 'slot', 'brass slot'], desc: 'The glass is spotless except for a smudge right where a forehead would rest.' },
+    // --- Alley ---
+    dumpster: { at: 'alley', words: ['dumpster', 'lid', 'bin', 'bins'], desc: 'A big green dumpster. You lean over and look in. You don\'t see trash. You see a long way down, and at the bottom an orange glow like a sunset. Someone has painted a small eye on the inside of the lid.' },
+    holding: { at: 'alley', words: ['security holding', 'holding', 'concrete building', 'squat building'], desc: 'Grey concrete, no windows, one door with no handle on this side. The sign reads SECURITY HOLDING.' },
+    envelope: { item: true, start: 'alley', words: ['envelope', 'till money', 'cash'], here: 'Wedged in the gap between the dumpster and the wall is a fat envelope.', desc: 'A thick envelope stamped BOX OFFICE — GERALD. There is twenty dollars inside.', onTake: () => {
+        S.geraldsCash = 'carrying'; S.money += 20; S.bills.push('envelope');
+        say('You pull the envelope free. It is stamped BOX OFFICE — GERALD, and there is $20 inside. You pocket the money. Gerald might want to know about this... or not.');
+        return 'consume';
+    } },
+    staffDoor: { at: 'alley', hidden: () => !flag('dumpsterMoved'), words: ['staff door', 'rusted door', 'door'], desc: 'A rusted steel door marked STAFF — NO RE-ENTRY. It is ajar.' },
+    // --- Trash room ---
+    trashPile: { at: 'trash', words: ['trash', 'refuse', 'garbage', 'stubs', 'cups', 'bags', 'popcorn bags', 'heap', 'pile'], desc: 'Years of it. Most of the ticket stubs are for screenings that, according to the dates, haven\'t happened yet.' },
+    filmCans: { at: 'trash', words: ['film cans', 'cans', 'can', 'film can', 'towers'], desc: 'Round metal film cans, dented and stacked. You open a few. Every one is empty.' },
+    bulb: { at: 'trash', words: ['bulb', 'cord', 'light'], desc: 'It swings in a slow circle. You watch it longer than you meant to.' },
+    note: { item: true, start: null, words: ['note', 'paper', 'scrap'], desc: 'A scrap of paper in a careful hand.', read: '"Cut #7 out tonight. It shows too much. Hid it where the air leaves the building. If the eye asks, I burned it. — R.M., Projection"' },
+    // --- Lava cave ---
+    sign: { at: 'ledge', words: ['sign', 'painted sign', 'descent'], desc: 'THE DESCENT. PLAY IF YOU DARE.', readSame: true },
+    lava: { at: ['ledge', 'basalt', 'pillar', 'slab', 'far'], words: ['lava', 'lake', 'magma'], desc: 'It breathes. That is the only word for it.', enter: () => die('lava') },
+    stones: { at: ['ledge', 'basalt', 'pillar', 'slab'], words: ['stones', 'stepping stones', 'stone', 'rocks'], desc: () => ({
+        ledge: 'Three stones are within jumping distance. The flat basalt stone looks solid. The cracked stone has hairline fractures running all through it. The black glassy stone gleams, and the air above it ripples with heat.',
+        basalt: 'The pillar ahead looks solid enough. The pale, porous stone is bobbing, which stones are not supposed to do.',
+        pillar: 'The low grey slab sits a safe distance above the lava. The red slab is glowing, which means it is very, very hot. The far platform looks too far to reach in one go.',
+        slab: 'From here, the far platform is an easy jump.',
+    })[S.room] },
+    portal: { at: 'far', words: ['portal', 'ring', 'purple', 'light', 'purple light'], desc: 'A slowly turning ring of purple light. Through it you can see platforms floating in a bright sky, and something small and green bouncing between them.', enter: () => playGame('Doodle Jump', '../doodleJump.html', 'descent') },
+    ironLadder: { at: 'far', words: ['ladder', 'iron ladder', 'hatch'], desc: 'Iron rungs set into the rock, climbing to a hatch in the roof.' },
+    caveBill: { item: true, start: 'far', words: ['bill', 'five', '5', 'money', 'cash'], here: 'A five-dollar bill is weighted down with a pebble near the edge.', desc: 'A five-dollar bill, slightly singed.', money: 5 },
+    crowbar: { item: true, start: 'far', words: ['crowbar', 'bar', 'pry bar'], here: 'A crowbar lies here, one end blackened by heat.', desc: 'A heavy iron crowbar. Good for doors, vents and arguments.', onTake: () => { say('Taken. It is warm. The bolted vent in Holding 01 is no longer impossible.'); return 'keep'; } },
+    // --- Lobby ---
+    iris: { at: 'lobby', npc: true, words: ['iris', 'eye', 'eyeball', 'giant eye', 'pupil', 'pool', 'fountain'], desc: 'The Iris. It is the size of a car and very wet. When you move, it moves. When you stop, it keeps looking. Its pupil dilates slowly, as if it is breathing, or deciding something.', talk: () => talkIris() },
+    chandelier: { at: 'lobby', words: ['chandelier', 'rings'], desc: 'Concentric rings of light, each turning at its own speed. Looking up at it makes you feel slightly watched, but then, so does everything in here.' },
+    backDoor: { at: 'lobby', words: ['back hall door', 'back door', 'narrow door', 'back hall', 'door'], desc: () => flag('backOpen') ? 'The back hall door stands unlocked.' : 'A narrow door with an old-fashioned keyhole. BACK HALL • SCREENS 1–4. Most guests walk right past it.' },
+    mainDoors: { at: 'lobby', words: ['main theater doors', 'main theater', 'main doors', 'big doors', 'chain', 'padlock', 'doors'], desc: () => flag('mainOpen') ? 'The big doors stand open.' : 'Tall double doors under a sign reading MAIN THEATER. A heavy chain is looped through the handles and closed with a padlock. A small brass plate under the lock reads CRITICS ONLY.' },
+    // --- West lobby ---
+    benny: { at: ['westLobby'], npc: true, words: ['benny', 'concession', 'man', 'paper hat', 'stand', 'counter'], desc: 'Benny wears a paper hat and an apron that has seen things. He is very proud of the burgers.', talk: () => talkBenny() },
+    menuBoard: { at: 'westLobby', words: ['menu', 'board', 'menu board'], desc: 'PIZZA $4 · SODA $3 · FRIES $2 · HAMBURGER $5', readSame: true },
+    slots: { at: 'westLobby', words: ['slot machine', 'slots', 'slot'], desc: 'A chrome slot machine with three reels. $2 a pull. A small eye is painted on the jackpot symbol.', play: () => playSlots() },
+    hiloTable: { at: 'westLobby', words: ['hi lo', 'hilo', 'hi lo table', 'card table', 'cards', 'table'], desc: 'A card table built into a cabinet. $5 to start. Guess whether the next card is higher or lower, and cash out whenever you like.', play: () => playHilo() },
+    plinko: { at: 'westLobby', words: ['plinko', 'plinko board', 'board'], desc: 'A tall pegboard. $2 a disc. The centre slots pay the most.', play: () => playPlinko() },
+    // --- East lobby ---
+    rita: { at: 'eastLobby', npc: true, words: ['rita', 'clerk', 'check in', 'desk', 'check in desk'], desc: 'Rita wears a name badge and the smile of someone who has given directions to the same four screens nine hundred times today and would happily do it nine hundred more.', talk: () => talkRita() },
+    bell: { at: 'eastLobby', words: ['bell', 'brass bell'], desc: 'A brass desk bell.', ring: () => say('Ding. Rita looks up instantly. "Hello there!"') },
+    sofas: { at: 'eastLobby', words: ['sofa', 'sofas', 'couch', 'velvet sofa', 'cushions'], desc: 'Deep purple velvet, low and soft. One sofa sits a little away from the wall, as if it has been nudged.', search: () => findCornerBill() },
+    corner: { at: 'eastLobby', words: ['corner', 'wall'], desc: 'The corner behind the sofas, where things roll and are never seen again.', search: () => findCornerBill() },
+    cornerBill: { item: true, start: null, words: ['bill', 'five', '5', 'money', 'cash'], here: 'A five-dollar bill lies in the corner.', desc: 'A five-dollar bill, a little dusty.', money: 5 },
+    stranger: { at: 'eastLobby', npc: true, words: ['man', 'stranger', 'thin man', 'bench', 'coat'], desc: 'A thin man in a worn coat. He has been sitting so still for so long that the dust has started to treat him as furniture.', talk: () => talkStranger() },
+    // --- Back hall ---
+    board: { at: 'hallS', words: ['board', 'now showing', 'now showing board'], desc: 'NOW SHOWING · SCREEN 1 AGE OF WAR · SCREEN 2 BLAST BLOCK · SCREEN 3 STICK SOCCER · SCREEN 4 SNAKE GAME', readSame: true },
+    vale: { at: 'hallN', npc: true, words: ['vale', 'officer', 'officer vale', 'security', 'guard', 'cop'], desc: 'Officer Vale wears a crisp grey uniform and an expression that has never once been surprised. There is an earpiece in one ear.', talk: () => talkVale() },
+    bar: { at: 'hallN', words: ['bar', 'cart', 'concession cart'], desc: 'A small bar with nobody behind it and a cart with a soda half poured. The ice hasn\'t melted. It never seems to.' },
+    // --- Screens ---
+    screen: { at: Object.keys(SCREENS), words: ['screen', 'play symbol', 'play button', 'film', 'movie', 'title'], desc: () => `The screen glows with the title ${SCREENS[S.room].title.toUpperCase()} and a large play symbol. It pulses slowly, like it is waiting for you.`, play: () => { const sc = SCREENS[S.room]; playGame(sc.title, sc.url, S.room); } },
+    seats: { at: [...Object.keys(SCREENS), 'mainTheater'], words: ['seat', 'seats', 'chair', 'chairs', 'row', 'rows'], desc: 'Dark velvet cinema seats with cupholders.', sit: () => { S.sitting = 'seat'; say('You sink into a seat. It is, frankly, an excellent seat.'); } },
+    // --- Jail ---
+    bunk: { at: 'jail', words: ['bunk', 'bed', 'blanket'], desc: 'A steel bunk bolted to the wall, with a blanket that wouldn\'t warm a sandwich.', sit: () => { S.sitting = 'bunk'; say('You sit on the bunk. It does not improve.'); } },
+    bailSlot: { at: 'jail', words: ['bail slot', 'slot', 'grille', 'speaker', 'intercom', 'sign'], desc: 'A slot just wide enough for folded bills, a speaker grille, and a stencilled sign: BAIL $10.' },
+    vent: { at: 'jail', words: ['vent', 'maintenance vent', 'bolts', 'cover', 'grate'], desc: () => S.ventOpen ? 'The vent cover hangs from a single bolt. Beyond it, a maintenance duct leads away into the dark.' : `A square maintenance vent high on the back wall, bolted shut with four heavy bolts.${S.ventKicks ? ` It has a ${['', 'small', 'large', 'serious'][Math.min(S.ventKicks, 3)]} dent in it now.` : ''}` },
+    // --- Duct ---
+    strips: { at: 'duct', words: ['strips', 'copper strips', 'copper', 'electricity', 'strip'], desc: 'Two copper strips across the floor, crackling with blue sparks. They are too far apart to step between, but not too far to jump.' },
+    ductLedge: { at: 'duct', words: ['ledge', 'narrow ledge', 'wall'], desc: () => S.locs.reel === null && !flag('reelSeen') ? (S.flags.reelSeen = true, S.locs.reel = 'duct', 'A narrow ledge at waist height. Wedged at the back of it, where nobody would ever think to look, is a round metal film can.') : 'A narrow ledge at waist height.', search: () => say(OBJ.ductLedge.desc()) },
+    reel: { item: true, start: null, words: ['reel', 'film can', 'can', 'film', 'reel 7', '7'], here: 'A round film can sits on the ledge.', desc: 'A round metal film can. Scratched into the lid: #7. Inside is a single reel of film. You feel very strongly that you should not hold it up to the light.', onTake: () => { say('Taken. The can is heavier than film should be.'); award('reel'); return 'keep'; } },
+    fan: { at: 'fans', words: ['fan', 'blades', 'industrial fan'], desc: () => fanSlow(1) ? 'The blades are turning slowly. Now is the time.' : 'The blades are a grey blur. Every few moments they wind down almost to a stop.' },
+    greenLadder: { at: 'ladder', words: ['ladder', 'green ladder', 'hatch'], desc: 'A steel ladder painted safety green, climbing to a round hatch.' },
+    // --- Main theater ---
+    projector: { at: 'mainTheater', words: ['projector', 'booth', 'projection booth', 'window'], desc: () => flag('reelLoaded') ? 'The old projector, with reel #7 threaded and ready. The switch is within reach.' : 'An old projector behind the booth window, dark and empty. The take-up reel is bare.' },
+    bigScreen: { at: 'mainTheater', words: ['screen', 'big screen'], desc: () => S.lens ? 'Through the lens, the screen is not blank. It is a window, and on the other side of it, the theater is full.' : 'Huge and blank and very slightly grey, like a held breath.' },
+    sheets: { at: 'mainTheater', words: ['sheets', 'dust sheets', 'dust'], desc: 'Dust sheets over most of the seats. Under a few of them, the shape of the cushions looks... occupied.' },
+    // --- Carried items (start nowhere) ---
+    pizza: { item: true, start: null, food: true, words: ['pizza', 'slice'], desc: 'A slice of pizza, still too hot.' },
+    soda: { item: true, start: null, food: true, words: ['soda', 'drink', 'cup'], desc: 'A sweating cup of soda.' },
+    fries: { item: true, start: null, food: true, words: ['fries', 'chips'], desc: 'A paper boat of fries.' },
+    hamburger: { item: true, start: null, food: true, words: ['hamburger', 'burger'], desc: 'Benny\'s burger. It really is very good-looking.' },
+    oldKey: { item: true, start: null, words: ['key', 'old key', 'brass key'], desc: 'An old brass key, worn smooth, warm from someone else\'s pocket for years.' },
+    pass: { item: true, start: null, words: ['pass', 'critic pass', 'card'], desc: 'A stiff card with gold edges: CRITIC PASS. On the back, an eye has been embossed so lightly you can only feel it.' },
+    lens: { item: true, start: null, words: ['lens', 'iris s lens', 'iris lens', 'monocle'], desc: 'A round lens of dark glass, still wet. When you hold it up, the world on the other side is the same, only more so.' },
+};
+function initLocs() { for (const [id, o] of Object.entries(OBJ)) if (o.item) S.locs[id] = o.start ?? null; }
+initLocs();
+function inRoom(o, room) {
+    if (o.item) return false;
+    if (typeof o.at === 'function') return o.at();
+    return Array.isArray(o.at) ? o.at.includes(room) : o.at === room;
+}
+function visible() {
+    const v = [];
+    for (const [id, o] of Object.entries(OBJ)) {
+        if (o.hidden && o.hidden()) continue;
+        if (o.item ? (S.locs[id] === S.room || S.locs[id] === 'inv') : inRoom(o, S.room)) v.push(id);
+    }
+    return v;
+}
+const VOCAB = new Set();
+Object.values(OBJ).forEach(o => o.words.forEach(w => w.split(' ').forEach(x => VOCAB.add(x))));
+function findObj(phrase) {
+    if (!phrase) return { none: true };
+    let best = null, bestLen = 0;
+    for (const id of visible()) for (const w of OBJ[id].words) {
+        const re = new RegExp(`(^| )${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}( |$)`);
+        if (re.test(phrase) && w.length > bestLen) { best = id; bestLen = w.length; }
+    }
+    if (best) return { id: best };
+    const unknown = phrase.split(' ').find(x => !VOCAB.has(x) && !STOP.has(x));
+    return unknown ? { unknown } : { absent: true };
+}
+const STOP = new Set(['to', 'with', 'on', 'in', 'into', 'at', 'from', 'my', 'some', 'of', 'over', 'up', 'down', 'out', 'and']);
+
+// =====================================================================
+// Describing
+// =====================================================================
+function look(full = true) {
+    const r = ROOMS[S.room];
+    if (full) titleCard(S.room);
+    say(r.name + (S.sitting ? ', in a seat' : ''), 'rt');
+    if (full) say(r.desc());
+    const items = Object.keys(OBJ).filter(id => OBJ[id].item && S.locs[id] === S.room && !(OBJ[id].hidden && OBJ[id].hidden()));
+    items.forEach(id => say(OBJ[id].here || `There is ${OBJ[id].words[0]} here.`));
+    if (full && S.lens && r.lens) say('Through the Iris\'s lens: ' + r.lens, 'say');
+}
+function status() {
+    document.getElementById('sroom').textContent = ROOMS[S.room].name;
+    document.getElementById('sright').textContent = `$${S.money}  Tickets:${S.tickets}  Score:${score()}/${maxScore()}  Moves:${S.moves}`;
+    renderBag();
+}
+function moveTo(id, msg) {
+    if (msg) say(msg);
+    S.sitting = null;
+    const first = !S.visited.includes(id);
+    S.room = id;
+    if (first) S.visited.push(id);
+    look(first || S.verbose);
+    onEnter(id, first);
+}
+function onEnter(id, first) {
+    if (id === 'lobby' && S.geraldsCash === 'carrying' && !S.flags.envelopeWarned) {
+        S.flags.envelopeWarned = true;
+        S.geraldsCash = 'kept'; S.metGerald = true; S.criminal = true;
+        say('Behind you, out on the street, Gerald starts shouting about his envelope. You keep walking. In the fountain, the Iris turns very slightly toward the street doors, as if passing on a message.', 'say');
+        say('[You are now a criminal. Officer Vale will want a word.]', 'sys');
+    }
+    if (id === 'hallS' && first) award('backhall');
+    if ((id === 'hallS' || id === 'hallN') && (S.criminal || S.unpaid.length) && !conv) {
+        say('A hand falls on your shoulder. Officer Vale has come down the hall without making a sound.', 'say');
+        valeConfront();
+    }
+    if (id === 'mainTheater') { award('mainTheater'); if (S.lens) endingLens(); }
+    if (id === 'ledge') { S.caveVisits++; }
+}
+
+// =====================================================================
+// Movement
+// =====================================================================
+function go(dir) {
+    if (dir === 'back') dir = ROOMS[S.room].exits.back ? 'back' : 'out';
+    if (S.sitting) { say('(first getting up)'); S.sitting = null; }
+    const r = ROOMS[S.room];
+    if (r.jumps && !r.exits[dir]) {
+        if (S.room === 'duct' && dir === 'n') return say(r.noExit.n);
+        return say('You are standing on a rock in a lake of lava. Walking is not really an option. You could JUMP to something.');
+    }
+    let dest = r.exits[dir];
+    if (typeof dest === 'function') dest = dest();
+    if (dest === undefined) return say(r.noExit?.[dir] ?? (dir === 'out' || dir === 'in' ? 'You\'ll need to say which way.' : 'You can\'t go that way.'));
+    if (dest === null) return say(r.noExit?.[dir] ?? 'You can\'t go that way.');
+    if (dest === true) return;
+    moveTo(dest, r.enterMsg?.[dir]);
+}
+function enterDumpster() {
+    say('You swing a leg over the edge of the dumpster and drop in. There is no bottom. You fall for a long, warm moment, and land on your feet on a stone ledge.');
+    return 'ledge';
+}
+function backHallDoor() {
+    if (flag('backOpen')) return 'hallS';
+    if (!has('oldKey')) { say('The door is locked. There\'s an old-fashioned keyhole. The man on the bench in the lounge keeps glancing at it.'); return null; }
+    S.flags.backOpen = true;
+    say('You fit the old key into the lock. It turns as if it had been waiting for you, and the door swings open.');
+    return 'hallS';
+}
+function mainTheaterDoor() {
+    if (flag('mainOpen')) return 'mainTheater';
+    if (!has('pass')) { say('The doors are chained and padlocked. The brass plate reads CRITICS ONLY.'); return null; }
+    S.flags.mainOpen = true;
+    say('You hold up the Critic Pass. The padlock clicks open on its own, the chain slithers to the floor, and the big doors swing inward.');
+    return 'mainTheater';
+}
+function enterScreen(id) {
+    const sc = SCREENS[id];
+    if (S.tickets > 0) { S.tickets--; say(`You tear a ticket in half at the door of Screen ${sc.n}. (${S.tickets} left.)`); return id; }
+    if (S.unpaid.includes(id)) { say('You slip back in. Nobody stops you. Somebody notices.'); return id; }
+    S.unpaid.push(id); S.criminal = true;
+    say(`You don't have a ticket. Nobody is checking the door, so you slip into Screen ${sc.n} anyway. High in the corner of the ceiling, a small round camera lens turns to follow you.`);
+    say('[The Iris has logged an unpaid screening under your face.]', 'sys');
+    return id;
+}
+function escapeJail() {
+    say('You climb the green ladder and shove the hatch open. Cold night air. You haul yourself up through a grate in the middle of Main Street, and nobody sees you do it except the moon.');
+    Q.notify('escapedJail'); S.criminal = false; S.unpaid = [];
+    award('escape');
+    return 'street';
+}
+
+// =====================================================================
+// Death
+// =====================================================================
+function die(kind) {
+    const lines = {
+        lava: 'You step into the lava. It is exactly as hot as it looks.',
+        crumble: 'You land on the cracked stone. The cracks become gaps, the gaps become pieces, and the pieces go down into the lava, taking you with them.',
+        burn: 'You land on the glowing stone. Your shoes catch fire, then the rest of you does. You fall, briefly and with great feeling, into the lava.',
+        sink: 'The pale stone takes your weight for exactly one second before it sinks like a sponge, and you with it.',
+        farjump: 'You jump for the far platform. It was, as you suspected, too far. You have some time to think about that on the way down.',
+    };
+    say(lines[kind] ?? lines.lava);
+    say('****  You have died  ****', 'death');
+    Q.notify('died');
+    S.money = Math.max(0, S.money - 15);
+    S.criminal = false; S.unpaid = [];
+    say('The darkness lifts. You are standing on Main Street, $15 lighter, with no memory of how you got here. Somewhere inside the cinema, an eye blinks.');
+    moveTo('street');
+}
+function jump(target) {
+    const r = ROOMS[S.room];
+    if (!r.jumps) {
+        if (S.room === 'jail' && !S.ventOpen) return kickVent(true);
+        return say(pick(['You jump on the spot. Nothing happens, but you feel a little better.', 'Wheeee!', 'You jump. The floor is still there when you come down.']));
+    }
+    if (!target) {
+        const opts = { ledge: 'the basalt stone, the cracked stone or the black glassy stone', basalt: 'the tall pillar, the pale bobbing stone, or back to the ledge', pillar: 'the low grey slab, the glowing red slab, straight for the far platform, or back to the basalt stone', slab: 'the far platform, or back to the pillar', far: 'back to the low slab', duct: 'over the strips' }[S.room];
+        return say(`Jump to what? From here you could try ${opts}.`);
+    }
+    const key = Object.keys(r.jumps).find(k => target.split(' ').includes(k));
+    if (!key) return say('You can\'t reach that from here.');
+    const dest = r.jumps[key];
+    if (['lava', 'crumble', 'burn', 'sink', 'farjump'].includes(dest)) return die(dest);
+    if (S.room === 'duct') return moveTo('fans', 'You take a run-up and jump. Blue sparks snap at your heels, and you land on the far side with every hair on your arms standing up.');
+    if (dest === 'far' && !S.scored.includes('lava')) { moveTo('far', 'You make the last jump and land on cool black rock. Behind you the lava gives a long, disappointed sigh.'); award('lava'); return; }
+    moveTo(dest, dest === 'ledge' ? 'You jump back to the ledge.' : 'You jump. You land. Your heart catches up a moment later.');
+}
+
+// =====================================================================
+// Conversations (menus with numbered options)
+// =====================================================================
+function menu(speaker, text, options) {
+    if (speaker) say(speaker.toUpperCase() + ':', 'say');
+    if (text) say(text);
+    conv = options;
+    options.forEach((o, i) => say(`${i + 1}) ${o[0]}`, 'opt'));
+    say('');
+    if (!S.talked.includes(speaker) && speaker) S.talked.push(speaker);
+}
+function endConv(msg) { conv = null; if (msg) say(msg); }
+
+// ---- Gerald ----
+function talkGerald() {
+    if (S.geraldsCash === 'carrying') {
+        const canRepay = S.money >= 20;
+        return menu('Gerald', 'Gerald is patting down every pocket he has. "You haven\'t seen an envelope, have you? Took the trash out and the till money went with it. Twenty dollars. If it\'s gone, it comes out of my pay."', [
+            canRepay ? ['"Here. I found it by the dumpster." (give him $20)', () => {
+                S.money -= 20; S.tickets += 2; S.geraldsCash = 'returned'; S.metGerald = true;
+                say('He counts it twice. Then a third time. "...All of it." He slides two tickets under the glass. "On the house. Don\'t tell management. Don\'t tell the eye, either." (+2 tickets)');
+                award('honest');
+                menu('Gerald', null, [['"Why not the eye?"', () => endConv('"Because it already knows. It just likes hearing people say it."')], ['"Thanks, Gerald."', () => endConv()]]);
+            }] : ['"I found it... but I spent some of it."', () => { S.geraldsCash = 'spent'; S.metGerald = true; endConv('"Spent it." He stares at you for a long time. "Well. At least you said so. That\'s more than most."'); }],
+            ['"Haven\'t seen it."', () => { S.geraldsCash = 'kept'; S.metGerald = true; S.criminal = true; endConv('"Hm." He goes back to his pockets. In the lobby, through the glass doors, the giant eye in the fountain turns toward you.'); say('[You lied to Gerald. The Iris watched you pick up that envelope, and it told Officer Vale.]', 'sys'); }],
+            ['Say nothing.', () => endConv('You say nothing. Gerald keeps patting his pockets.')],
+        ]);
+    }
+    if (S.geraldsCash === 'kept' || S.geraldsCash === 'spent') {
+        return menu('Gerald', S.geraldsCash === 'kept' ? '"You." He doesn\'t look up. "Twenty dollars. That\'s what you think I\'m worth." He slides the window open anyway.' : '"Still owe me twenty." He slides the window open anyway.',
+            [['"I need a ticket."', ticketMenu], ['Leave.', () => endConv()]]);
+    }
+    if (S.metGerald) return menu('Gerald', '"Still here. Still watching." He nods toward the booth window.', [['"I need a ticket."', ticketMenu], ['"What\'s playing?"', whatsPlaying], ['"Never mind."', () => endConv()]]);
+    menu('Gerald', '"You\'re new."', [
+        ['"How long have you worked here?"', () => menu('Gerald', '"Longer than the paint on these walls. Longer than most things around here." He looks past you, at the street. "The screens... they\'ve been different lately. Something\'s shifted."', [
+            ['"Different how?"', () => { S.metGerald = true; menu('Gerald', '"Hard to say. Just... watch the screens. Really watch them." He slides the ticket window open.', [['"I\'ll take a ticket."', ticketMenu], ['"Thanks, Gerald."', () => endConv()]]); }],
+            ['"Can I get a ticket?"', () => { S.metGerald = true; ticketMenu(); }]])],
+        ['"I need a ticket."', () => { S.metGerald = true; menu('Gerald', '"Right to it. I can respect that."', [['"How many tickets?"', ticketMenu]]); }],
+    ]);
+}
+function ticketMenu() {
+    menu('Gerald', '"Each ticket gets you into one show. How many would you like?"', [
+        ['Buy 1 ticket ($5)', () => buyTickets(1, 5)],
+        ['Buy 3 tickets ($10, save $5)', () => buyTickets(3, 10)],
+        ['"Actually, never mind."', () => endConv()],
+    ]);
+}
+function whatsPlaying() {
+    menu('Gerald', '"Four shows tonight. Age of War, Blast Block, Stick Soccer, Snake Game. Each ticket is good for one show."', [['"I\'ll take a ticket."', ticketMenu], ['"Maybe later."', () => endConv()]]);
+}
+function buyTickets(n, cost) {
+    if (S.money < cost) return endConv(`"That's $${cost}." You don't have it. Gerald waits, unmoved, until you go away.`);
+    S.money -= cost; S.tickets += n;
+    endConv(`You slide $${cost} under the glass. Gerald slides back ${n === 1 ? 'a ticket' : n + ' tickets'}. "Enjoy the show." (Tickets: ${S.tickets})`);
+    award('ticket');
+}
+
+// ---- Rita ----
+function talkRita() {
+    menu('Rita, Check-In', '"Hello there, welcome to Kai\'s Cinema! Looking for your theater today?"', [
+        ['"Yes, which way are the theaters?"', ritaTheaters],
+        ['"What\'s showing today?"', () => menu('Rita, Check-In', '"Tonight\'s lineup: Theater 1, Age of War, a strategy game. Theater 2, Blast Block, a puzzle. Theater 3, Stick Soccer, sports. Theater 4, Snake Game, arcade. All four are running now, just pick your hall!"', [['"Great, point me to one."', ritaTheaters], ['"Thanks, I\'ll wander first."', () => endConv()]])],
+        ['"Just browsing, thanks!"', () => endConv()],
+    ]);
+}
+function ritaTheaters() {
+    const d = {
+        1: '"Age of War is Screen 1. Go through the BACK HALL door, north of the fountain, and it\'s the first gold-framed door on your left."',
+        2: '"Blast Block is Screen 2. Through the BACK HALL door; its blue marquee is first on your right."',
+        3: '"Stick Soccer is Screen 3, farther down the back hall on the left. Follow the green marquee."',
+        4: '"Snake Game is Screen 4, farther down the back hall on the right. Follow the mint marquee."',
+    };
+    menu('Rita, Check-In', '"Perfect! Which show are you here for?"', [1, 2, 3, 4].map(n => [`Theater ${n}: ${Object.values(SCREENS)[n - 1].title}`, () => menu('Rita, Check-In', d[n], [
+        ['"Can I check a different theater?"', ritaTheaters],
+        ['"Thanks, that\'s all I needed!"', () => endConv('"Enjoy the show! And remember, if you need a ticket, the booth is just outside the front entrance. Have a wonderful time at Kai\'s Cinema!"')],
+    ])]));
+}
+
+// ---- Benny ----
+const FOOD = { pizza: ['Pizza', 4, '"One slice coming right up. Careful, it\'s hot."'], soda: ['Soda', 3, '"One soda, coming right up!"'], fries: ['Fries', 2, '"Fries, great call. Nothing beats \'em during a film."'], hamburger: ['Hamburger', 5, '"One burger. I\'ll make it a good one."'] };
+function talkBenny() {
+    menu('Benny, Concessions', '"Step right up! What can Benny get for ya tonight?"', [
+        ['"What\'s on the menu?"', bennyMenu],
+        ['"What do you recommend?"', () => menu('Benny, Concessions', '"Honestly? The burger. Every time. I don\'t make the rules. It\'s just the best thing on the menu."', [['"Sold. Show me the menu."', bennyMenu], ['"I\'ll think about it."', () => endConv()]])],
+        ['"Just browsing, thanks."', () => endConv()],
+    ]);
+}
+function bennyMenu() {
+    menu('Benny, Concessions', '"Tonight\'s menu: pizza, four bucks. Soda, three. Fries, two. Hamburger, five. What\'re you feeling?"',
+        Object.entries(FOOD).map(([id, [name, cost]]) => [`${name} ($${cost})`, () => buyFood(id)]).concat([['"Nothing, thanks."', () => endConv()]]));
+}
+function buyFood(id) {
+    const [name, cost, line] = FOOD[id];
+    if (S.money < cost) return endConv(`"That's $${cost}, friend." You don't have it.`);
+    if (has(id)) return endConv('"You\'ve already got one of those! Eat that one first."');
+    S.money -= cost; S.locs[id] = 'inv';
+    endConv(`${line} Benny hands you the ${name.toLowerCase()}. (−$${cost})`);
+}
+
+// ---- The man on the bench ----
+function foodHeld() { return ['hamburger', 'pizza', 'fries', 'soda'].find(has); }
+function talkStranger() {
+    if (S.strangerFed) return menu('The man on the bench', '*He notices you. A small nod.* "...Still here."', [
+        ['"What\'s behind that door?"', () => endConv('*He looks toward the far wall. He says nothing. He smiles faintly.*')],
+        ['"Who were you, before?"', () => endConv(flag('readNote') ? '*He looks at the note in your pocket, then away.* "I ran the projector. Every night for thirty years. Then one night I watched what I was showing." *A long pause.* "Don\'t."' : '"...Someone with a job. Someone with keys."')],
+        ['Walk away.', () => endConv()]]);
+    menu('...', '*A man sits still on the bench, watching the fountain. After a moment, he notices you.*', [
+        ['"Are you alright?"', strangerOkay],
+        ['"Who are you?"', () => menu('...', '"...Does it matter? Names are for people who intend to leave."', [['"Are you alright?"', strangerOkay], ['Walk away.', () => endConv()]])],
+        ['Walk away.', () => endConv()],
+    ]);
+}
+function strangerOkay() {
+    const f = foodHeld();
+    menu('...', '"I get by. Haven\'t eaten in a while, but... I used to come here every week, before they changed things. Before they sealed off the back."',
+        (f ? [[`"Here, take my ${OBJ[f].words[0]}."`, () => strangerFeed(f)]] : []).concat([['"Sealed off the back?"', strangerSealed], ['Walk away.', () => endConv()]]));
+}
+function strangerSealed() {
+    const f = foodHeld();
+    menu('...', '*He looks toward the far wall for a long moment.* "There\'s a door. Most people look right through it. Too busy watching the screens. ...God, I\'m hungry. Anyway. I don\'t have the key anymore."',
+        (f ? [[`"Here, take my ${OBJ[f].words[0]}."`, () => strangerFeed(f)]] : []).concat([['"What happened to the key?"', () => endConv('"...I gave it away. Same as everything else. That\'s what you do, eventually. You give things away."')], ['Walk away.', () => endConv()]]));
+}
+function strangerFeed(f) {
+    S.locs[f] = null; S.locs.oldKey = 'inv'; S.strangerFed = true;
+    award('fed');
+    menu('...', '*He takes it without looking at it, and holds it a moment.* "...I didn\'t expect that." *A long pause.* "Keep this. I don\'t need it anymore. But you... you look like someone who stops to look at things."\n\n*He presses something into your hand. You don\'t look at it until he has looked away. It is an old brass key.*', [
+        ['"What does it open?"', () => endConv('"...You\'ll know when you find it. Or you won\'t. Some things are meant to be found by people who slow down long enough to look."')],
+        ['Walk away.', () => endConv()]]);
+}
+
+// ---- Officer Vale ----
+function talkVale() {
+    if (S.criminal || S.unpaid.length) return valeConfront();
+    say('OFFICER VALE:', 'say');
+    say('"Tickets in order. Keep the aisles clear, and do not believe everything the eye tells you."');
+}
+function valeConfront() {
+    const n = S.unpaid.length;
+    menu('Officer Vale, Cinema Security', n ? `"The Iris logged ${n} unpaid screening${n === 1 ? '' : 's'} under your face. Bail is $10. Otherwise, you are coming with me."` : '"The Iris tells me you are carrying something that is not yours. Bail is $10. Otherwise, you are coming with me."', [
+        ['Pay $10 bail', () => {
+            if (S.money < 10) { say('"You do not have enough. Holding cell."'); return arrest(); }
+            S.money -= 10; S.criminal = false; S.unpaid = [];
+            endConv('You count out ten dollars. Officer Vale writes you a receipt in very small handwriting. "Your admission record is clear."');
+        }],
+        ['Refuse', () => arrest()],
+        ['Try to run', () => { say('You get about four steps.'); arrest(); }],
+    ]);
+}
+function arrest() {
+    conv = null;
+    say('Red and blue light floods the hall from nowhere in particular. "Hands behind your back." A siren winds up somewhere outside, and the next few minutes happen to you rather than with you.');
+    say('YOU ARE UNDER ARREST\nOfficer Vale is transferring you to Holding 01', 'death');
+    S.unpaid = [];
+    moveTo('jail');
+    say('A voice crackles from the grille: "Pay the slot, or sit tight." It does not mention the vent.');
+}
+
+// ---- The Iris ----
+function talkIris() {
+    const memory = [
+        `You carry $${S.money} and ${S.tickets} ticket${S.tickets === 1 ? '' : 's'}.`,
+        S.played.length ? `You have entered ${S.played.join(', ')}.` : 'You have not entered a screening. Yet.',
+        S.talked.filter(n => !/iris|\.\.\./i.test(n)).length ? `You have spoken to ${[...new Set(S.talked.filter(n => !/iris|\.\.\./i.test(n)).map(n => n.split(',')[0]))].join(', ')}.` : 'The staff still do not know your voice.',
+        S.strangerFed ? 'You fed the one on the bench. He gave you the old key.' : 'The hungry one on the bench is still waiting.',
+        S.caveVisits ? `You survived the lava cave ${S.caveVisits} time${S.caveVisits === 1 ? '' : 's'}.` : 'You have not yet fallen beneath the street.',
+        S.geraldsCash === 'returned' ? 'You gave Gerald his envelope back. Honest. How dull.' : '',
+        S.geraldsCash === 'kept' ? 'You kept Gerald\'s envelope. I told them. I tell them everything.' : '',
+        S.geraldsCash === 'spent' ? 'You spent Gerald\'s money, then confessed. I have not decided what that makes you.' : '',
+        S.iris.claimed.length ? `You have finished ${S.iris.claimed.length} of my errands. You never asked why.` : '',
+    ].filter(Boolean).join('\n');
+    const a = S.iris.active;
+    menu('The Iris', `The pupil widens. The voice comes from the water, and from the floor, and from just behind your left ear.\n\n"They all call me The Iris. They pretend I am decoration. I am the cinema's witness.\n\n${memory}\n\nI remember what the building is told to forget."`, [
+        ['"What are your sinister activities?"', () => endConv('"I count unpaid admissions. I open doors that management sealed. I keep a copy of every choice made under this roof. Gerald calls that sinister. Rita calls it impossible. The officer calls it evidence."')],
+        ['"What should I do next?"', () => endConv(`"${irisNext()}"`)],
+        [a?.complete ? '"It is done."' : a ? '"About your errand..."' : '"Do you have something for me?"', irisQuestTalk],
+        ['Break eye contact.', () => endConv('You look away. It does not.')],
+    ]);
+}
+function irisNext() {
+    if (!S.played.length) return 'Buy a ticket, unlock the back hall, take a seat, and begin a screening.';
+    if (!S.caveVisits) return 'The dumpster outside is not merely a dumpster.';
+    if (has('pass')) return 'Your Critic Pass has opened a path most guests never see. The big doors. Go and look.';
+    return 'Three different screenings will earn you a pass. I will know when it happens.';
+}
+function irisQuestTalk() {
+    const a = S.iris.active;
+    if (a?.complete) {
+        const [id, q] = Q.claim();
+        S.money += q.money;
+        if (id === 'theMissingReel') { S.locs.reel = null; S.locs.lens = 'inv'; S.lens = true; }
+        say('THE IRIS:', 'say'); say(`"${q.done}"`); say(`[Reward: $${q.money}${id === 'theMissingReel' ? ' and the Iris\'s lens' : ''}]`, 'sys');
+        award('iris_' + id);
+        if (id === 'theMissingReel') { say('You hold the lens up to your eye. The lobby is the same, only more so. (Every room will look different now. And the big doors, northeast, are waiting.)', 'sys'); if (!has('pass')) { S.locs.pass = 'inv'; say('Something else is in your hand that wasn\'t a moment ago: a Critic Pass.', 'sys'); } }
+        if (Q.next()) menu(null, '"I have something else for you."', [['"What is it?"', irisQuestTalk], ['Leave.', () => endConv()]]);
+        else endConv();
+        return;
+    }
+    if (a) {
+        const q = IRIS_QUESTS[a.id];
+        return menu('The Iris', `"${q.objective} (${Q.progress()}/${q.need}). I am still watching."`, [['"Give me a different errand."', () => { S.iris.available.push(a.id); S.iris.active = null; irisQuestTalk(); }], ['Leave.', () => endConv()]]);
+    }
+    const offer = Q.next();
+    if (!offer) return endConv('"Nothing. Not yet. Come back when the building has changed."');
+    const q = IRIS_QUESTS[offer];
+    menu('The Iris', `"${q.ask}"\n\n[Errand: ${q.title}]`, [
+        ['"I will do it."', () => { Q.accept(offer); if (S.iris.active.complete) menu('The Iris', '"You have already done it. I watched you do it."', [['"Then pay me."', irisQuestTalk]]); else endConv('"Go. I will know when it is done."'); }],
+        ['"Why?"', () => endConv(`"${['Because I asked.', 'You would not understand the answer. You would only repeat it.', 'The building wants it. I want it more.', 'Ask me again after. You will not want to.'][(S.iris.claimed.length + q.title.length) % 4]}"`)],
+        ['"Not now."', () => endConv()],
+    ]);
+}
+
+// =====================================================================
+// Arcade
+// =====================================================================
+function arcadePaid(cost) {
+    if (S.money < cost) { say(`It costs $${cost}. You don't have it.`); return false; }
+    S.money -= cost; Q.notify('arcadePlayed'); return true;
+}
+function playSlots() {
+    if (!arcadePaid(2)) return;
+    const sym = ['CHERRY', 'BELL', 'BAR', 'SEVEN', 'EYE'];
+    const r = [0, 1, 2].map(() => pick(sym));
+    let win = 0;
+    if (r[0] === r[1] && r[1] === r[2]) win = r[0] === 'EYE' ? 30 : r[0] === 'SEVEN' ? 20 : 10;
+    else if (r[0] === r[1] || r[1] === r[2] || r[0] === r[2]) win = 3;
+    S.money += win;
+    say(`You feed in $2 and pull the lever.\n\n   [ ${r.join(' ] [ ')} ]\n\n${win ? `The machine coughs up $${win}.` : 'Nothing. The machine sounds pleased with itself anyway.'}${r.filter(x => x === 'EYE').length > 1 ? ' Two eyes on the reels look at you, then look back at the fountain.' : ''}`);
+}
+function playPlinko() {
+    if (!arcadePaid(2)) return;
+    const mult = [0, 1, 2, 5, 2, 1, 0];
+    let pos = 3; const rows = [];
+    for (let i = 0; i < 6; i++) { pos = Math.max(0, Math.min(6, pos + (Math.random() < 0.5 ? -1 : 1) * (Math.random() < 0.7 ? 1 : 0))); rows.push('  ' + Array.from({ length: 7 }, (_, k) => k === pos ? 'o' : '.').join(' ')); }
+    const win = mult[pos] * 2;
+    S.money += win;
+    say(`You drop a disc. It clatters down the pegs:\n\n${rows.join('\n')}\n  ${mult.join(' ')}   (x your $2)\n\n${win ? `It lands in the ${mult[pos]}x slot. You win $${win}.` : 'It lands in a zero slot.'}`);
+}
+const CARD = ['', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+function playHilo() {
+    if (!arcadePaid(5)) return;
+    hilo = { card: 1 + Math.floor(Math.random() * 13), pot: 5 };
+    hiloMenu(`The dealer cabinet flips a card: ${CARD[hilo.card]}. The pot is $5.`);
+}
+function hiloMenu(text) {
+    menu(null, text, [['Higher', () => hiloGuess(1)], ['Lower', () => hiloGuess(-1)], [`Cash out ($${hilo.pot})`, () => { S.money += hilo.pot; endConv(`You cash out $${hilo.pot}.`); hilo = null; }]]);
+}
+function hiloGuess(d) {
+    const next = 1 + Math.floor(Math.random() * 13);
+    const ok = d > 0 ? next > hilo.card : next < hilo.card;
+    if (next === hilo.card) { hilo.card = next; return hiloMenu(`${CARD[next]}. A tie. The pot stays at $${hilo.pot}.`); }
+    if (!ok) { endConv(`${CARD[next]}. Wrong way. The pot is gone.`); hilo = null; return; }
+    hilo.card = next; hilo.pot *= 2;
+    hiloMenu(`${CARD[next]}! The pot doubles to $${hilo.pot}.`);
+}
+
+// =====================================================================
+// Games (screenings)
+// =====================================================================
+function playGame(title, url, key) {
+    if (!S.played.includes(title)) S.played.push(title);
+    document.getElementById('gameTitle').textContent = `NOW SHOWING: ${title.toUpperCase()}`;
+    document.getElementById('gameFrame').src = url;
+    document.getElementById('gameModal').classList.add('open');
+    say(key === 'descent' ? 'You step into the ring of purple light. The cave folds away, and you are falling upward into a bright sky.' : 'The lights dim. The screen grows until it is the only thing in the world.');
+    if (POINTS[key]) award(key);
+    const screensSeen = Object.values(SCREENS).filter(sc => S.played.includes(sc.title)).length;
+    if (screensSeen >= 3 && !has('pass') && S.locs.pass === null) {
+        S.locs.pass = 'inv';
+        say('When you look down, there is a stiff gold-edged card in your hand that was not there before: a CRITIC PASS. The Iris noticed.', 'sys');
+        award('critic');
+    }
+}
+function posterGame(title, url) { say('You press your palm to the poster. It gives like the surface of water.'); playGame(title, url, null); }
+function closeGame() {
+    const m = document.getElementById('gameModal'); if (!m.classList.contains('open')) return;
+    m.classList.remove('open'); document.getElementById('gameFrame').src = 'about:blank';
+    say('The screening ends. The house lights come up slowly.', 'sys'); status(); scrollDown(); cmdEl.focus();
+}
+document.getElementById('gameClose').onclick = closeGame;
+window.addEventListener('keydown', e => { if (e.key === 'Escape') closeGame(); });
+
+// =====================================================================
+// Puzzles and misc actions
+// =====================================================================
+function kickVent(jumped) {
+    if (S.room !== 'jail') return say('There\'s nothing here worth kicking.');
+    if (S.ventOpen) return say('It\'s already open.');
+    S.ventKicks++;
+    if (S.ventKicks < 3) return say(`${jumped ? 'You jump, kick off the bunk, and slam your heel into the vent' : 'You climb onto the bunk and kick the vent'}. ${S.ventKicks === 1 ? 'A bolt shifts. The speaker grille crackles, then goes quiet.' : 'Two bolts ping across the cell. One more ought to do it.'}`);
+    S.ventOpen = true;
+    say('One last kick. The cover bangs open and hangs from its final bolt. Beyond it is a dark maintenance duct. A voice from the grille says "...hello?" and then, thoughtfully, nothing else.');
+}
+function pryVent() {
+    if (S.room !== 'jail') return say('There\'s nothing here to pry.');
+    if (!has('crowbar')) return say('With what? Your fingernails?');
+    if (S.ventOpen) return say('It\'s already open.');
+    S.ventOpen = true;
+    say('You climb onto the bunk, wedge the crowbar under the cover and lean. The bolts give one after another, ping, ping, ping, ping, and the vent swings open onto a dark maintenance duct.');
+}
+function findCornerBill() {
+    if (S.locs.cornerBill !== null || flag('cornerSearched')) return say('You find dust, a button and a ticket stub for a film called THE NIGHT IT OPENED. Nothing else.');
+    S.flags.cornerSearched = true; S.locs.cornerBill = 'eastLobby';
+    say('You pull the nudged sofa away from the wall. In the corner behind it, curled up in the dust, is a five-dollar bill.');
+}
+function searchTrash() {
+    Q.notify('trashRoomSearched');
+    if (S.locs.note === null && !flag('noteFound')) {
+        S.flags.noteFound = true; S.locs.note = 'inv';
+        say('You dig through stubs, cups and popcorn bags until your arms smell like butter. At the bottom of the heap, under a pile of empty film cans, is a scrap of paper. You take it.');
+        return award('trash');
+    }
+    say('You dig through the trash again. More stubs. More cups. More empty film cans.');
+}
+function reelInProjector() {
+    if (S.room !== 'mainTheater') return say('There\'s no projector here.');
+    if (!has('reel')) return say('You have nothing to put in it.');
+    S.locs.reel = null; S.flags.reelLoaded = true;
+    say('You climb the narrow stair to the booth and thread reel #7 onto the old projector. Your hands seem to know how. The switch is right there.\n\nSomewhere far below, in the lobby, the Iris has gone completely still.');
+}
+function endingWatch() {
+    say('You throw the switch.\n\nThe projector clatters awake, and the big screen fills with grainy light. It is this lobby, years ago, on its opening night. Crowds in good coats. A much younger Gerald selling tickets with a grin. Rita\'s desk is not there yet. The fountain is just a fountain: water, coins, a little stone basin.\n\nThe camera finds a young man in the projection booth, threading a reel. You know his face. You last saw it on the bench, watching the water.\n\nThe film skips. When it comes back, the water in the fountain is moving the wrong way. Slowly, in the centre of the basin, something opens.\n\nOn the screen, every head in the crowd turns toward the fountain at once. Then, together, they turn and look out of the screen, at you.\n\nThe projector stops. The house lights do not come up. Behind you, from the lobby, very close, a slow and patient voice says: "I asked you not to watch it."');
+    say('****  You have watched it  ****', 'death');
+    award('ending'); finish();
+}
+function endingLens() {
+    say('The lens is cold against your eye. The big screen is not blank. It is a window, and on the other side of it the Main Theater is full.\n\nEvery seat is taken. Guests in coats from every decade the building has been open, faint as breath on glass. Gerald, young and old at once. Rita, on her first day. The man from the bench, sitting in the projection booth with his hands in his lap, finally done. Every one of them is perfectly still, perfectly happy, and facing the screen.\n\nThere is one empty seat, in the middle of the middle row. It has your name on it.\n\nThe voice is not behind you this time. It is all around you. "Now you see what I see. Everyone who ever stayed. You did not watch the reel, so I will tell you what was on it: me, opening. And them, deciding to stay."\n\n"Sit down. The show is about to start."');
+    say('****  You see what the Iris sees  ****', 'death');
+    award('ending'); finish();
+}
+function finish() {
+    S.over = true;
+    say(`In ${S.moves} moves you scored ${score()} out of a possible ${maxScore()}, which earns you the rank of ${rank()}.\n\nType RESTART to begin again, UNDO to take back your last move, or keep exploring with RESTORE.`, 'sys');
+}
+function hint() {
+    const a = S.iris.active;
+    if (!S.metGerald && !S.tickets) return 'Gerald sells tickets from the booth west of the cinema doors.';
+    if (!has('oldKey') && !flag('backOpen')) return 'The man on the bench in the east lobby is hungry. Benny, in the west lobby, sells food.';
+    if (S.played.length < 3) return 'The back hall, north of the fountain, has four screens. Play three different ones.';
+    if (a && !a.complete) return `The Iris wants you to: ${IRIS_QUESTS[a.id].objective}`;
+    if (a?.complete) return 'Go back to the fountain and tell the Iris your errand is done.';
+    if (Q.next()) return 'The Iris, in the lobby fountain, has errands for you. Ask it.';
+    if (has('reel')) return 'You have the reel. Bring it to the Iris, or take it to the projector in the Main Theater. One of those is what the Iris asked.';
+    return 'The big doors in the lobby lead to the Main Theater. A Critic Pass will open them.';
+}
+
+// =====================================================================
+// Parser
+// =====================================================================
+const META = new Set(['score', 'help', 'hint', 'undo', 'save', 'restore', 'restart', 'verbose', 'brief', 'inventory', 'i', 'look', 'l', 'about', 'credits', 'map', 'm']);
+function normalize(s) { return s.toLowerCase().replace(/[^a-z0-9#' ]+/g, ' ').replace(/'/g, ' ').replace(/\b(the|a|an|please|carefully|quickly)\b/g, ' ').replace(/\s+/g, ' ').trim(); }
+function need(phrase, verb, cb) {
+    const f = findObj(phrase);
+    if (f.none) return say(`What do you want to ${verb}?`);
+    if (f.unknown) return say(`I don't know the word "${f.unknown}".`);
+    if (f.absent) return say('You can\'t see any such thing.');
+    cb(f.id, OBJ[f.id]);
+}
+function descOf(o) { return typeof o.desc === 'function' ? o.desc() : o.desc; }
+
+const RULES = [
+    [/^(n|s|e|w|ne|nw|se|sw|u|d|in|out|north|south|east|west|northeast|northwest|southeast|southwest|up|down|inside|outside|exit|leave|back|upstairs|downstairs)$/, m => go(DIR_WORDS[m[1]] ?? m[1])],
+    [/^(?:go|walk|run|head|move|step|crawl) (?:to )?(n|s|e|w|ne|nw|se|sw|u|d|in|out|north|south|east|west|northeast|northwest|southeast|southwest|up|down|inside|outside|back)$/, m => go(DIR_WORDS[m[1]] ?? m[1])],
+    [/^(l|look)( around)?$/, () => look(true)],
+    [/^(i|inv|inventory)$/, () => inventory()],
+    [/^(z|wait)$/, () => say(S.room === 'fans' ? (fanSlow(1) ? 'You wait. The great blades shudder and slow almost to a stop. Now.' : 'You wait. The fan roars on.') : pick(['Time passes.', 'You wait. Somewhere, an eye does not blink.', 'Time passes. The building creaks, like something settling in to watch.']))],
+    [/^(?:look|search|check|peek|feel) (?:behind|under|beneath|around) (.+)$/, m => need(m[1], 'search', (id, o) => o.search ? o.search() : id === 'dumpster' ? say(flag('dumpsterMoved') ? 'The rusted door is right there.' : 'There\'s a gap between the dumpster and the wall. It looks like the dumpster could be pushed aside.') : id === 'columns' ? say(descOf(o)) : say('You find nothing of interest.'))],
+    [/^(?:x|examine|look at|look|inspect|check|describe|view|study|look in|look inside|look into|look through) (.+)$/, m => need(m[1], 'examine', (id, o) => {
+        if (id === 'lens' && has('lens')) return say(S.lens ? 'You are already looking through it.' : 'You hold the lens to your eye. (Try WEAR LENS to keep it there.)');
+        say(descOf(o) ?? 'You see nothing special.');
+    })],
+    [/^read (.+)$/, m => need(m[1], 'read', (id, o) => {
+        if (o.read) { if (id === 'note') S.flags.readNote = true; return say(o.read); }
+        if (o.readSame) return say(descOf(o));
+        say('There\'s nothing written on it.');
+    })],
+    [/^(?:take|get|grab|pick up|pick|collect|steal) (.+)$/, m => take(m[1])],
+    [/^(?:drop|discard|throw away) (.+)$/, m => need(m[1], 'drop', (id, o) => {
+        if (S.locs[id] !== 'inv') return say('You aren\'t carrying that.');
+        if (['oldKey', 'pass', 'lens', 'reel'].includes(id)) return say('You have a feeling you will need that. You keep it.');
+        S.locs[id] = S.room; say('Dropped.');
+    })],
+    [/^(?:talk|speak|chat) (?:to|with) (.+)$/, m => talkTo(m[1])],
+    [/^(?:talk|speak|chat|hello|hi|greet|ask)(?: (.*))?$/, m => talkTo((m[1] || '').replace(/^about .*$/, '').replace(/ about .*$/, ''))],
+    [/^(?:give|offer|hand|feed) (.+?) (?:to )(.+)$/, m => give(m[1], m[2])],
+    [/^feed (.+?)(?: (.+))?$/, m => give(m[2] || foodHeld() || 'food', m[1])],
+    [/^(?:show) (.+?) (?:to )(.+)$/, m => need(m[1], 'show', id => id === 'pass' && S.room === 'lobby' ? go('ne') : say('Nobody seems very interested.'))],
+    [/^(?:buy|order|purchase) (.+)$/, m => buy(m[1])],
+    [/^(?:pay|pay bail|bail|post bail)(?: .*)?$/, () => payBail()],
+    [/^sit(?: (?:down|on|in))?(?: (.*))?$/, m => sit(m[1] || '')],
+    [/^(?:stand|stand up|get up|rise)$/, () => { if (!S.sitting) return say('You are already standing.'); S.sitting = null; say('You stand up.'); }],
+    [/^(?:play|watch|start|press play|press|use|touch|operate|pull lever|pull)(?: (.*))?$/, m => play(m[1] || '')],
+    [/^(?:jump|leap|hop|vault)(?: (?:to|onto|on|over|across|toward|towards|into|for|in))? ?(.*)$/, m => m[1] && /lava|lake/.test(m[1]) ? die('lava') : jump(m[1])],
+    [/^(?:enter|go into|go in|climb in|climb into|get in|step into|walk into|go through|step through|go to)(?: (.+))?$/, m => enter(m[1])],
+    [/^(?:climb|climb up|scale)(?: (.+))?$/, m => (!m[1] || /ladder|up|hatch|rope/.test(m[1])) ? go('u') : /dumpster/.test(m[1]) ? go('in') : say('There\'s nothing to climb here.')],
+    [/^(?:climb down|descend)(?: .*)?$/, () => go('d')],
+    [/^(?:push|move|shove|roll|pull|slide) (.+)$/, m => need(m[1], 'push', id => {
+        if (id === 'dumpster') { if (flag('dumpsterMoved')) return say('It has already been moved.'); S.flags.dumpsterMoved = true; return say('You put your shoulder into the dumpster. It rolls a few feet on squealing casters, uncovering a rusted door in the cinema wall marked STAFF — NO RE-ENTRY. It is ajar. (East.)'); }
+        if (id === 'sofas') return findCornerBill();
+        say('It doesn\'t budge.');
+    })],
+    [/^(?:pry|prise|prize|lever|force|crowbar|open) (?:open )?(.+?)(?: with .+)?$/, m => need(m[1], 'open', id => {
+        if (id === 'vent') return /open/.test(m[0]) && !has('crowbar') && !/pry|force/.test(m[0]) ? say('It\'s bolted shut. You\'d need something to pry it with, or an awful lot of kicking.') : pryVent();
+        if (id === 'backDoor') return go('n');
+        if (id === 'mainDoors') return go('ne');
+        if (id === 'reel') return say('Inside is a single reel of film. You don\'t hold it up to the light. Somehow you know better.');
+        if (id === 'envelope') return say('Twenty dollars inside.');
+        if (id === 'dumpster') return say('The lid is already propped open.');
+        if (id === 'staffDoor') return go('e');
+        say('You can\'t open that.');
+    })],
+    [/^(?:unlock) (.+?)(?: with .+)?$/, m => need(m[1], 'unlock', id => id === 'backDoor' ? go('n') : id === 'mainDoors' ? go('ne') : say('That doesn\'t have a lock you can use.'))],
+    [/^(?:kick|hit|punch|bash|smash|attack|break) (.+)$/, m => need(m[1], 'kick', id => {
+        if (id === 'vent') return kickVent(false);
+        if (OBJ[id].npc) return say(id === 'iris' ? 'You raise a foot toward the giant eye. The pupil narrows to a pinpoint. You lower your foot.' : id === 'vale' ? 'That would be the shortest arrest in the building\'s history.' : 'Violence isn\'t the answer to this one.');
+        say('Ow.');
+    })],
+    [/^(?:search|rummage|dig|dig through|rummage through|look through|go through)(?: (.*))?$/, m => {
+        if (S.room === 'trash' && (!m[1] || /trash|garbage|heap|pile|refuse|cans|bags/.test(m[1]))) return searchTrash();
+        if (!m[1]) return say('Search what?');
+        need(m[1], 'search', (id, o) => o.search ? o.search() : id === 'columns' ? say(descOf(o)) : id === 'dumpster' ? say('There\'s a gap between the dumpster and the wall' + (S.locs.envelope === 'alley' ? ', with an envelope wedged in it.' : '.')) : say('You find nothing new.'));
+    }],
+    [/^(?:eat|drink|consume|taste) (.+)$/, m => need(m[1], 'eat', (id, o) => {
+        if (!o.food) return say('That is not food, however hungry you are.');
+        if (!has(id)) return say('You aren\'t holding that.');
+        S.locs[id] = null; say(id === 'soda' ? 'You drink the soda. It tastes like every film you ever saw as a kid.' : `You eat the ${o.words[0]}. Delicious. The man on the bench, if he could see you, would be heartbroken.`);
+    })],
+    [/^(?:wear|put on|hold up|look through|use|equip) (.+)$/, m => need(m[1], 'wear', id => {
+        if (id !== 'lens') return say('You can\'t wear that.');
+        if (!has('lens')) return say('You aren\'t holding it.');
+        S.lens = true; say('You set the lens over your eye. It fits as though it were cut for you. Everything is the same, only more so.'); look(true);
+        if (S.room === 'mainTheater') endingLens();
+    })],
+    [/^(?:remove|take off) (.+)$/, m => need(m[1], 'remove', id => { if (id !== 'lens' || !S.lens) return say('You aren\'t wearing that.'); S.lens = false; say('You take the lens away from your eye. The building looks smaller.'); })],
+    [/^(?:put|thread|load|insert|place) (.+?) (?:in|into|on|onto) (.+)$/, m => need(m[1], 'put', id => {
+        if (id === 'reel' && /projector|booth/.test(m[2])) return reelInProjector();
+        if (/vent/.test(m[2]) && id === 'crowbar') return pryVent();
+        say('That doesn\'t fit.');
+    })],
+    [/^(?:turn on|switch on|flip|throw|start|run) (?:switch|projector|it)$/, () => S.room === 'mainTheater' && flag('reelLoaded') ? endingWatch() : say('Nothing happens.')],
+    [/^ring(?: .*)?$/, () => S.room === 'eastLobby' ? OBJ.bell.ring() : say('There\'s nothing here to ring.')],
+    [/^(?:listen)(?: .*)?$/, () => say({ lobby: 'Under the hum of the chandelier you can hear it: slow, wet breathing.', fans: 'The fan roars, slows, and roars again.', ledge: 'The lava breathes.', street: 'The marquee buzzes. A long way off, a siren starts and then thinks better of it.' }[S.room] ?? 'You hear the building, settling in around you.')],
+    [/^(?:smell|sniff)(?: .*)?$/, () => say({ westLobby: 'Butter, salt and grilled onions. Benny is a genius.', alley: 'Not garbage. Something warmer. Brimstone and popcorn.', trash: 'Old butter.' }[S.room] ?? 'Popcorn. The whole building smells faintly of popcorn.')],
+    [/^(?:sleep|nap|lie down)$/, () => say(S.room === 'jail' ? 'You lie on the bunk and close your eyes. You dream of a pool with something in it, looking up. You wake up feeling watched.' : 'Not here.')],
+    [/^(?:cry|scream|yell|shout)(?: .*)?$/, () => say('Your voice echoes, and in the lobby, very faintly, something echoes it back.')],
+    [/^(?:dance)$/, () => say('You dance. It is not a lot of dance, but it is honest dance.')],
+    [/^(?:xyzzy|plugh|plover)$/, () => say('A hollow voice says "Wrong building."')],
+    [/^(?:score)$/, () => say(`Your score is ${score()} (out of ${maxScore()}), in ${S.moves} moves. This gives you the rank of ${rank()}.`)],
+    [/^(?:hint|hints|what now|what next|help me)$/, () => say(hint(), 'sys')],
+    [/^(?:help|about|instructions|credits|\?)$/, () => help()],
+    [/^(x|examine|read|take|get|drop|open|push|give|eat|wear|kick|pry|enter|buy)$/, m => say(`What do you want to ${m[1] === 'x' ? 'examine' : m[1]}?`)],
+    [/^(?:map|m)$/, () => drawMap()],
+    [/^(?:verbose)$/, () => { S.verbose = true; say('Maximum verbosity. Every room will be fully described every time.', 'sys'); }],
+    [/^(?:brief)$/, () => { S.verbose = false; say('Brief descriptions. Rooms are fully described only on your first visit.', 'sys'); }],
+];
+
+function take(phrase) {
+    if (/^(all|everything)$/.test(phrase)) {
+        const items = visible().filter(id => OBJ[id].item && S.locs[id] === S.room);
+        if (!items.length) return say('There is nothing here to take.');
+        return items.forEach(id => { const n = out.children.length; takeOne(id); const p = out.children[n]; if (p) p.textContent = `${OBJ[id].words[0]}: ${p.textContent}`; });
+    }
+    need(phrase, 'take', takeOne);
+}
+function takeOne(id) {
+    const o = OBJ[id];
+    if (!o.item) return say(o.npc ? 'I don\'t think they would like that.' : id === 'iris' ? 'It is the size of a car.' : 'That\'s hardly portable.');
+    if (S.locs[id] === 'inv') return say('You already have that.');
+    if (o.money) { S.locs[id] = null; S.money += o.money; S.bills.push(id); return say(`Taken. (+$${o.money})`); }
+    if (o.onTake) { const r = o.onTake(); if (r === 'consume') { S.locs[id] = null; return; } S.locs[id] = 'inv'; return; }
+    S.locs[id] = 'inv'; say('Taken.');
+}
+function inventory() {
+    const items = Object.keys(OBJ).filter(id => OBJ[id].item && S.locs[id] === 'inv');
+    const lines = [`$${S.money} in cash`];
+    if (S.tickets) lines.push(`${S.tickets} cinema ticket${S.tickets === 1 ? '' : 's'}`);
+    const NAMES = { oldKey: 'an old brass key', pass: 'a Critic Pass', lens: 'the Iris\'s lens', reel: 'a film can marked #7', note: 'a note from the trash room', crowbar: 'a crowbar', hamburger: 'a hamburger', pizza: 'a slice of pizza', soda: 'a cup of soda', fries: 'some fries' };
+    items.forEach(id => lines.push((NAMES[id] ?? 'a ' + OBJ[id].words[0]) + (id === 'lens' && S.lens ? ' (worn over one eye)' : '')));
+    say('You are carrying:\n' + lines.map(l => '  ' + l).join('\n'));
+}
+function talkTo(phrase) {
+    if (!phrase) { const npc = visible().find(id => OBJ[id].npc); if (npc) return OBJ[npc].talk(); return say('There is nobody here to talk to. You talk to yourself for a bit. You are good company.'); }
+    need(phrase, 'talk to', (id, o) => o.talk ? o.talk() : say(id === 'reel' ? 'The reel does not answer. You get the feeling it could.' : 'It doesn\'t answer.'));
+}
+function give(itemPhrase, whoPhrase) {
+    const who = findObj(whoPhrase);
+    if (!who.id) return need(whoPhrase, 'give it to', () => {});
+    const item = findObj(itemPhrase);
+    if (who.id === 'stranger') {
+        const f = item.id && OBJ[item.id].food && has(item.id) ? item.id : foodHeld();
+        if (!f) return say('You have no food to give him. Benny, in the west lobby, sells some.');
+        if (S.strangerFed) return say('He shakes his head gently. "You\'ve done enough."');
+        return strangerFeed(f);
+    }
+    if (who.id === 'iris') {
+        if (item.id === 'reel' && has('reel')) {
+            if (S.iris.active?.id === 'theMissingReel' && S.iris.active.complete) return irisQuestTalk();
+            if (!S.iris.claimed.includes('theMissingReel')) { say('The pupil swells until it is almost all black. "Not yet. Ask me for the errand first. I like things done in order."'); return; }
+        }
+        return say('The Iris looks at it, and then at you. "Keep it. I already have a copy."');
+    }
+    if (who.id === 'gerald' && item.id === 'envelope') return talkGerald();
+    if (who.id === 'gerald' && S.geraldsCash === 'carrying') return talkGerald();
+    if (who.id === 'benny' && item.id && OBJ[item.id].food) return say('"Nah, that\'s yours. I already ate. Four times."');
+    say(OBJ[who.id].npc ? 'They politely decline.' : 'That isn\'t something you can give things to.');
+}
+function buy(phrase) {
+    if (/ticket/.test(phrase)) {
+        if (S.room !== 'booth') return say('Tickets are sold at Gerald\'s booth, west of the cinema doors.');
+        if (S.geraldsCash === 'carrying') return talkGerald();
+        const three = /3|three/.test(phrase);
+        return buyTickets(three ? 3 : 1, three ? 10 : 5);
+    }
+    const id = Object.keys(FOOD).find(k => phrase.includes(k) || (k === 'hamburger' && /burger/.test(phrase)) || (k === 'soda' && /drink/.test(phrase)) || (k === 'fries' && /chips/.test(phrase)));
+    if (id || /food|snack|something to eat/.test(phrase)) {
+        if (S.room !== 'westLobby') return say('Benny\'s concession stand is in the west lobby.');
+        return id ? buyFood(id) : bennyMenu();
+    }
+    say('That isn\'t for sale.');
+}
+function payBail() {
+    if (S.room === 'jail') {
+        if (S.money < 10) return say('The slot wants $10. You don\'t have it. The vent, high on the wall, does not charge admission.');
+        S.money -= 10; S.criminal = false; S.unpaid = [];
+        say('You feed ten dollars into the slot. It swallows them, considers, and the door unlocks with a heavy clunk. A corridor, a door, a gust of night air, and you are back outside.');
+        return moveTo('street');
+    }
+    if (S.room === 'hallN' && (S.criminal || S.unpaid.length)) return valeConfront();
+    if (S.room === 'booth') return talkGerald();
+    say('There is nobody here to pay.');
+}
+function sit(phrase) {
+    if (S.sitting) return say('You are already sitting.');
+    if (!phrase) {
+        const t = visible().find(id => OBJ[id].sit || id === 'sofas');
+        if (!t) return say('There is nowhere to sit here.');
+        phrase = OBJ[t].words[0];
+    }
+    need(phrase, 'sit on', (id, o) => {
+        if (id === 'sofas') { S.sitting = 'sofa'; return say('You sink into the velvet sofa. From here you have an excellent view of the fountain, and it has an excellent view of you.'); }
+        if (o.sit) return o.sit();
+        say('You can\'t sit on that.');
+    });
+}
+function play(phrase) {
+    const vis = visible();
+    if (!phrase) {
+        const cand = ['screen', 'slots', 'hiloTable', 'plinko', 'portal'].find(id => vis.includes(id));
+        if (!cand) return say('There is nothing here to play.');
+        return cand === 'portal' ? OBJ.portal.enter() : OBJ[cand].play();
+    }
+    if (/crowbar/.test(phrase) && /vent|bolt/.test(phrase)) return pryVent();
+    if (/\bkey\b/.test(phrase)) return S.room === 'lobby' ? go('n') : say('There\'s nothing here the key fits.');
+    if (/lens/.test(phrase)) return runOne('wear lens');
+    if (/pass/.test(phrase)) return S.room === 'lobby' ? go('ne') : say('Nobody here checks passes.');
+    if (/reel/.test(phrase) && S.room === 'mainTheater') return reelInProjector();
+    if (/switch/.test(phrase) && S.room === 'mainTheater') return flag('reelLoaded') ? endingWatch() : say('Nothing happens. The projector is empty.');
+    if (/game|film|movie|show|screening/.test(phrase) && vis.includes('screen')) return OBJ.screen.play();
+    need(phrase, 'play', (id, o) => {
+        if (o.play) return o.play();
+        if (o.enter) return o.enter();
+        if (id === 'reel') return reelInProjector();
+        if (id === 'projector') return flag('reelLoaded') ? endingWatch() : say('It has nothing to play.');
+        if (id === 'bell') return o.ring();
+        say(`You can't play with ${o.npc ? 'people' : 'that'}.`);
+    });
+}
+function enter(phrase) {
+    if (!phrase) return go('in');
+    if (/dumpster/.test(phrase) && S.room === 'alley') return go('in');
+    if (/lava/.test(phrase)) return die('lava');
+    if (/back hall/.test(phrase) && S.room === 'lobby') return go('n');
+    if (/main theater|main theatre|big doors/.test(phrase) && S.room === 'lobby') return go('ne');
+    if (/cinema|theater|theatre|doors|lobby/.test(phrase) && S.room === 'street') return go('n');
+    if (/booth/.test(phrase) && S.room === 'street') return go('w');
+    if (/alley/.test(phrase) && S.room === 'street') return go('e');
+    if (/vent|duct/.test(phrase) && S.room === 'jail') return go('u');
+    if (/staff door|rusted door|door/.test(phrase) && S.room === 'alley') return go('e');
+    const sm = phrase.match(/screen ?([1-4])|(age of war|blast block|stick soccer|snake)/);
+    if (sm && (S.room === 'hallS' || S.room === 'hallN')) {
+        const n = sm[1] ? +sm[1] : { 'age of war': 1, 'blast block': 2, 'stick soccer': 3, snake: 4 }[sm[2]];
+        const id = 'screen' + n;
+        if (SCREENS[id].hall !== S.room) return say(`Screen ${n} is at the ${S.room === 'hallS' ? 'north' : 'south'} end of the hall.`);
+        return go(SCREENS[id].side);
+    }
+    need(phrase, 'enter', (id, o) => o.enter ? o.enter() : say('You can\'t go in there.'));
+}
+function help() {
+    say(`KAI'S CINEMA is a text adventure. You explore by typing short commands, and the story answers in prose.
+
+  Move:      NORTH, SOUTH, EAST, WEST (or N, S, E, W), NE, NW, UP, DOWN, IN, OUT
+  Look:      LOOK (L), EXAMINE (X) thing, READ thing, SEARCH thing
+  Things:    TAKE thing, DROP thing, INVENTORY (I), GIVE thing TO someone
+  People:    TALK TO someone, then type the number of what you want to say
+  Also:      BUY, PAY, SIT, STAND, PLAY, JUMP TO thing, PUSH, PRY, KICK, WEAR, PUT thing IN thing, WAIT (Z)
+  Map:       MAP (M) draws the places you have been
+  Meta:      HINT, SCORE, UNDO, SAVE, RESTORE, RESTART, VERBOSE, BRIEF, AGAIN (G)
+
+You can chain commands with a full stop: TAKE ENVELOPE. WEST. TALK TO GERALD
+Click any item icon (in the text or the strip under the status bar) to type its name.
+The screens in the back hall (and a few other things) play Kai's real games. Press ESC to come back.`, 'sys');
+}
+
+// =====================================================================
+// Turn loop
+// =====================================================================
+function exec(raw) {
+    const text = raw.trim();
+    say('>' + text, 'cmd');
+    if (!text) { say('I beg your pardon?'); return finishTurn(); }
+    const parts = text.split(/\.\s*|\s+then\s+/i).filter(x => x.trim());
+    for (const p of parts) { runOne(p); if (S.over) break; }
+    finishTurn();
+}
+function runOne(raw) {
+    let input = normalize(raw);
+    if (input === 'g' || input === 'again') { if (!lastCmd) return say('There is nothing to repeat.'); input = lastCmd; }
+    else lastCmd = input;
+    if (/^(undo|oops)$/.test(input)) return undo();
+    if (input === 'save') { try { localStorage.setItem(SAVE_KEY + '.slot', JSON.stringify(S)); say('Saved.', 'sys'); } catch (e) { say('Save failed.', 'sys'); } return; }
+    if (input === 'restore') { const s = localStorage.getItem(SAVE_KEY + '.slot'); if (!s) return say('There is no saved game.', 'sys'); S = Object.assign(fresh(), JSON.parse(s)); conv = null; say('Restored.', 'sys'); return look(true); }
+    if (input === 'restart') { S = fresh(); initLocs(); conv = null; hilo = null; undoStack = []; out.innerHTML = ''; return intro(); }
+    if (S.over && !/^(score|help|about|l|look|i|inventory)$/.test(input)) return say('The story is over. Type RESTART, UNDO or RESTORE.', 'sys');
+
+    if (conv) {
+        const n = parseInt(input, 10);
+        if (n >= 1 && n <= conv.length) { snapshot(); const [label, fn] = conv[n - 1]; conv = null; say(`(${label})`, 'sys'); fn(); return tick(); }
+        conv = null; hilo = null; say('(You end the conversation.)', 'sys');
+    }
+    if (/^\d+$/.test(input)) return say('There is nobody waiting for an answer.');
+    snapshot();
+    for (const [re, fn] of RULES) {
+        const m = input.match(re);
+        if (m) { fn(m); if (!META.has(input.split(' ')[0])) tick(); return; }
+    }
+    const first = input.split(' ')[0];
+    const known = VOCAB.has(first) || ['take', 'drop', 'go'].includes(first);
+    say(known ? 'That\'s not a verb I recognise.' : `I don't know the word "${first}".`);
+}
+function snapshot() { undoStack.push(JSON.stringify(S)); if (undoStack.length > 40) undoStack.shift(); }
+function undo() {
+    if (undoStack.length < 2) return say('You can\'t undo any further.', 'sys');
+    undoStack.pop();
+    S = JSON.parse(undoStack.pop()); conv = null; hilo = null;
+    say('[Previous turn undone.]', 'sys'); look(false);
+}
+function tick() {
+    S.moves++;
+    Q.check();
+    const r = ROOMS[S.room];
+    if (r.ambient && Math.random() < 0.12 && !conv) say(pick(r.ambient));
+    if (S.room === 'fans' && !conv && fanSlow() !== fanSlow(-1)) say(fanSlow() ? 'The great fan shudders and slows almost to a stop.' : 'The fan spins back up to a roar.');
+}
+function finishTurn() {
+    out.querySelectorAll('p').forEach(p => { if (!p.textContent) p.remove(); });
+    status(); scrollDown();
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { /* ignore */ }
+}
+function intro() {
+    say('KAI\'S CINEMA\nAn Interactive Fiction\nRevision 1 / Serial number 261119\nType HELP for instructions.', 'sys');
+    look(true);
+    S.visited.push('street');
+    status();
+}
+
+// =====================================================================
+// Boot
+// =====================================================================
+const cmdHistory = []; let hIdx = 0;
+cmdEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+        const v = cmdEl.value; cmdEl.value = '';
+        if (v.trim()) { cmdHistory.push(v); hIdx = cmdHistory.length; }
+        exec(v);
+    } else if (e.key === 'ArrowUp') { if (hIdx > 0) { hIdx--; cmdEl.value = cmdHistory[hIdx]; } e.preventDefault(); }
+    else if (e.key === 'ArrowDown') { if (hIdx < cmdHistory.length) { hIdx++; cmdEl.value = cmdHistory[hIdx] ?? ''; } e.preventDefault(); }
+});
+document.addEventListener('click', () => { if (!window.getSelection().toString()) cmdEl.focus(); });
+(() => {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { /* ignore */ }
+    if (saved && saved.moves > 0 && !saved.over) {
+        S = Object.assign(fresh(), saved);
+        say('KAI\'S CINEMA\nAn Interactive Fiction\n\n[Your last visit has been restored. Type RESTART to begin again.]', 'sys');
+        look(true); status();
+    } else intro();
+    cmdEl.focus();
+})();
+</script>
+</body>
+</html>
